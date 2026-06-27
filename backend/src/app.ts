@@ -15,11 +15,16 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
 
-  app.use(env.API_PREFIX, publicRouter);
-  app.use(`${env.API_PREFIX}/auth`, authRouter);
-  app.use(`${env.API_PREFIX}/lms`, lmsRouter);
-  app.use(`${env.API_PREFIX}/admin`, adminRouter);
-  app.use(`${env.API_PREFIX}/uploads`, uploadsRouter);
+  app.get("/", (_req, res) => res.json({ status: "ok", service: "atechskills-api", health: "/api/v1/health" }));
+
+  const prefixes = Array.from(new Set([env.API_PREFIX, "/api/v1", "/v1"]));
+  for (const prefix of prefixes) {
+    app.use(prefix, publicRouter);
+    app.use(`${prefix}/auth`, authRouter);
+    app.use(`${prefix}/lms`, lmsRouter);
+    app.use(`${prefix}/admin`, adminRouter);
+    app.use(`${prefix}/uploads`, uploadsRouter);
+  }
 
   app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
