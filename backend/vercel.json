@@ -2,24 +2,35 @@
   "version": 2,
   "installCommand": "npm install",
   "buildCommand": "npm run build",
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://atechskills.vercel.app" },
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Vary", "value": "Origin" }
+      ]
+    },
+    {
+      "source": "/v1/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://atechskills.vercel.app" },
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Vary", "value": "Origin" }
+      ]
+    }
+  ],
   "rewrites": [
-    { "source": "/", "destination": "/api/health" },
-    { "source": "/v1/:path*", "destination": "/api/v1/:path*" }
+    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/v1/:path*", "destination": "/api" },
+    { "source": "/", "destination": "/api" }
   ],
   "functions": {
     "api/index.ts": {
-      "maxDuration": 60
-    },
-    "api/health.ts": {
-      "maxDuration": 60
-    },
-    "api/v1/[...path].ts": {
-      "maxDuration": 60
-    },
-    "api/v1/health.ts": {
-      "maxDuration": 60
-    },
-    "api/[...path].ts": {
       "maxDuration": 60
     }
   }
