@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/[...path].ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 60
+    }
+  }
+}
