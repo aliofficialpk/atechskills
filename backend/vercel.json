@@ -3,10 +3,20 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "rewrites": [
-    { "source": "/", "destination": "/api" }
+    { "source": "/", "destination": "/api/health" },
+    { "source": "/v1/:path*", "destination": "/api/v1/:path*" }
   ],
   "functions": {
     "api/index.ts": {
+      "maxDuration": 60
+    },
+    "api/health.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/[...path].ts": {
+      "maxDuration": 60
+    },
+    "api/v1/health.ts": {
       "maxDuration": 60
     },
     "api/[...path].ts": {
