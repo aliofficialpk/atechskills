@@ -44,6 +44,21 @@
     },
     "api/v1/auth/refresh.ts": {
       "maxDuration": 60
+    },
+    "api/v1/opportunities.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/opportunities/[slug].ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/opportunities.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/opportunities/[id].ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/opportunities/[id]/publish.ts": {
+      "maxDuration": 60
     }
   }
 }
