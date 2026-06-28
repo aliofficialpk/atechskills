@@ -9,6 +9,7 @@ const permissions = [
   "insights.manage",
   "users.manage",
   "support.manage",
+  "opportunities.manage",
   "certificates.issue",
   "website.manage",
   "roles.manage"
@@ -19,7 +20,7 @@ const rolePermissions: Record<string, string[]> = {
   Admin: permissions,
   Teacher: ["courses.manage", "certificates.issue"],
   "Student Services": ["support.manage"],
-  "Content Manager": ["insights.manage", "website.manage"],
+  "Content Manager": ["insights.manage", "website.manage", "opportunities.manage"],
   "Event Manager": ["events.manage"],
   Student: []
 };
@@ -86,6 +87,50 @@ async function main() {
   if (demoTeacher) {
     await prisma.user.delete({ where: { id: demoTeacher.id } });
   }
+
+  await prisma.opportunity.upsert({
+    where: { slug: "junior-soc-analyst-remote-pakistan" },
+    update: {},
+    create: {
+      title: "Junior SOC Analyst",
+      slug: "junior-soc-analyst-remote-pakistan",
+      type: "JOB",
+      company: "AtechSkills Hiring Partner",
+      location: "Remote / Pakistan",
+      workMode: "Remote",
+      employmentType: "Full-time",
+      summary: "Entry-level SOC monitoring role for learners with networking, Linux, alert triage, and reporting foundations.",
+      description: "Support alert triage, escalation notes, basic log review, and incident documentation under a senior security team.",
+      requirements: ["Networking basics", "Linux fundamentals", "Clear written reporting"],
+      benefits: ["Mentored security operations experience", "Remote-friendly role", "Interview support through AtechSkills"],
+      applyUrl: "https://atechskills.vercel.app/contact",
+      visibility: "PUBLISHED",
+      isFeatured: true,
+      publishedAt: new Date()
+    }
+  });
+
+  await prisma.opportunity.upsert({
+    where: { slug: "cloud-security-internship-atechskills-network" },
+    update: {},
+    create: {
+      title: "Cloud Security Intern",
+      slug: "cloud-security-internship-atechskills-network",
+      type: "INTERNSHIP",
+      company: "AtechSkills Talent Network",
+      location: "Lahore / Hybrid",
+      workMode: "Hybrid",
+      employmentType: "Internship",
+      summary: "Practical internship track for students learning cloud security, IAM checks, documentation, and lab-based reviews.",
+      description: "Assist with cloud security checklists, IAM review notes, lab evidence, and learner project documentation.",
+      requirements: ["Cloud basics", "Security interest", "Available for weekly review meetings"],
+      benefits: ["Portfolio-ready tasks", "Instructor feedback", "Certificate and recommendation eligibility"],
+      applyUrl: "https://atechskills.vercel.app/contact",
+      visibility: "PUBLISHED",
+      isFeatured: true,
+      publishedAt: new Date()
+    }
+  });
 
   console.log({
     adminLogin: "admin",

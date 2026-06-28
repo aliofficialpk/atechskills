@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clock, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
+import { BriefcaseBusiness, CheckCircle2, Clock, ExternalLink, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
@@ -120,10 +120,146 @@ export function AdminControlCenter() {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-2">
       <AdminStaffForm />
+      <AdminOpportunityManager />
       <AdminScheduleForm />
       <AdminEnrollmentQueue />
       <AdminPerformancePanel />
     </div>
+  );
+}
+
+function AdminOpportunityManager() {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    setState({ loading: true });
+    try {
+      const response = await fetch(`${apiBase}/admin/opportunities`, { headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load opportunities");
+      setState({ loading: false, data });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load opportunities" });
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const payload = {
+      title: String(raw.title),
+      slug: String(raw.slug || raw.title).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+      type: String(raw.type),
+      company: String(raw.company),
+      location: String(raw.location),
+      workMode: raw.workMode ? String(raw.workMode) : undefined,
+      employmentType: raw.employmentType ? String(raw.employmentType) : undefined,
+      summary: String(raw.summary),
+      description: String(raw.description),
+      requirements: String(raw.requirements || "").split("\n").map((item) => item.trim()).filter(Boolean),
+      benefits: String(raw.benefits || "").split("\n").map((item) => item.trim()).filter(Boolean),
+      applyUrl: String(raw.applyUrl),
+      applyEmail: raw.applyEmail ? String(raw.applyEmail) : undefined,
+      deadline: raw.deadline ? new Date(String(raw.deadline)).toISOString() : undefined,
+      visibility: raw.visibility === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
+      isFeatured: raw.isFeatured === "on"
+    };
+    try {
+      const response = await fetch(`${apiBase}/admin/opportunities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to publish opportunity");
+      setMessage(`Saved opportunity: ${data.title}`);
+      form.reset();
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to publish opportunity");
+    }
+  }
+
+  async function publish(id: string) {
+    try {
+      const response = await fetch(`${apiBase}/admin/opportunities/${id}/publish`, { method: "PATCH", headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to publish opportunity");
+      setMessage(`Published: ${data.title}`);
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to publish opportunity");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <Card className="p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-xl font-bold"><BriefcaseBusiness className="text-brand-green" /> Jobs and Internships</h2>
+        <button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+      </div>
+      <form onSubmit={submit} className="mt-5 grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input required name="title" placeholder="Opportunity title" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <select name="type" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="JOB">Job</option>
+            <option value="INTERNSHIP">Internship</option>
+            <option value="APPRENTICESHIP">Apprenticeship</option>
+            <option value="FELLOWSHIP">Fellowship</option>
+          </select>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input required name="company" placeholder="Company" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input required name="location" placeholder="Location" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input name="workMode" placeholder="Remote / Hybrid / On-site" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="employmentType" placeholder="Full-time / Internship" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <input name="slug" placeholder="Optional slug" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <textarea required name="summary" placeholder="Short summary" rows={2} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <textarea required name="description" placeholder="Full description" rows={3} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <textarea name="requirements" placeholder="Requirements, one per line" rows={3} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <textarea name="benefits" placeholder="Benefits, one per line" rows={3} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input required name="applyUrl" type="url" placeholder="Apply link" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="applyEmail" type="email" placeholder="Apply email optional" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input name="deadline" type="datetime-local" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <select name="visibility" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="DRAFT">Draft</option>
+            <option value="PUBLISHED">Published</option>
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700"><input name="isFeatured" type="checkbox" /> Featured opportunity</label>
+        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Opportunity</button>
+      </form>
+      {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      <div className="mt-5 grid gap-3">
+        {state.loading && <p className="text-sm text-slate-500">Loading opportunities...</p>}
+        {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+        {(state.data ?? []).slice(0, 4).map((item) => (
+          <div key={item.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><h3 className="font-bold">{item.title}</h3><p className="text-sm text-slate-600">{item.company} - {item.type} - {item.visibility}</p></div>
+              <div className="flex gap-2">
+                <a href={item.applyUrl} target="_blank" className="rounded-md border border-slate-200 p-2 text-brand-green" title="Open apply link"><ExternalLink size={16} /></a>
+                {item.visibility !== "PUBLISHED" && <button onClick={() => publish(item.id)} className="rounded-md bg-brand-green px-3 py-2 text-xs font-bold text-white">Publish</button>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

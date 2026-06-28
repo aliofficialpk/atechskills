@@ -5,6 +5,7 @@ import { Badge, ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { CeoMessageSection } from "@/components/ceo-message";
 import { AuthForm, EnrollmentRequestForm, SmartForm } from "@/components/forms";
 import { AdminControlCenter, StudentLearningCenter } from "@/components/lms-widgets";
+import { OpportunityBoard } from "@/components/opportunity-board";
 import { categories, courses, dashboardModules, events, faqs, insights, jobs, portalCards, roleDashboards, supportTypes, teamMembers, testimonials } from "@/lib/data";
 import { formatCurrency } from "@/lib/utils";
 
@@ -209,6 +210,7 @@ export function StaticInfoPage({ kind }: { kind: string }) {
     blog: "Blog and Articles",
     gallery: "Gallery",
     careers: "Careers and Job Board",
+    opportunities: "Jobs and Internship Opportunities",
     "internship-board": "Internship Board",
     faq: "Frequently Asked Questions",
     "privacy-policy": "Privacy Policy",
@@ -223,6 +225,7 @@ export function StaticInfoPage({ kind }: { kind: string }) {
     blog: "Long-form articles, tutorials, career guidance, case studies, and technical explainers from the AtechSkills team.",
     gallery: "A visual archive for bootcamps, summits, workshops, seminars, project demos, certificates, and learner achievements.",
     careers: "A curated board for jobs, hiring partner opportunities, career tracks, and placement support for AtechSkills learners.",
+    opportunities: "A live board for jobs, internships, apprenticeships, application links, deadlines, and featured opportunities published by AtechSkills admins.",
     "internship-board": "Internships and early-career opportunities for students building practical cybersecurity, cloud, AI, and programming skills.",
     faq: "Answers to common questions about courses, live classes, recordings, certificates, payments, support, and the LMS.",
     "privacy-policy": "How AtechSkills handles learner data, support records, enrollment information, media, communications, and platform analytics.",
@@ -230,7 +233,7 @@ export function StaticInfoPage({ kind }: { kind: string }) {
     "watch-intro": "A short guided introduction to the AtechSkills learning experience, LMS portals, live classes, and DevSecAI programs.",
     "student-services": "Student Services supports academic, technical, payment, and enrollment requests through an accountable ticket workflow."
   };
-  const ctaHref = kind === "careers" ? "/daily-insights?category=jobs" : kind === "internship-board" ? "/daily-insights?category=internships" : kind.includes("devsecai") ? "/register" : "/courses";
+  const ctaHref = kind === "careers" ? "/opportunities" : kind === "internship-board" ? "/opportunities" : kind === "opportunities" ? "/contact" : kind.includes("devsecai") ? "/register" : "/courses";
   return (
     <>
       <PageHero eyebrow="AtechSkills" title={titles[kind] ?? "AtechSkills"} text={descriptions[kind] ?? descriptions.about} ctaHref={ctaHref} cta={kind.includes("devsecai") ? "Register Now" : kind === "watch-intro" ? "Explore Courses" : "Continue"} />
@@ -239,8 +242,9 @@ export function StaticInfoPage({ kind }: { kind: string }) {
         {kind === "devsecai-bootcamp" && <ProgramContent type="bootcamp" />}
         {kind === "devsecai-summit" && <ProgramContent type="summit" />}
         {kind === "gallery" && <GalleryContent />}
-        {kind === "careers" && <OpportunityContent title="Career Board" items={jobs.filter((job) => job.type !== "Internship")} />}
-        {kind === "internship-board" && <OpportunityContent title="Internship Board" items={jobs.filter((job) => job.type === "Internship")} />}
+        {kind === "opportunities" && <OpportunityBoard />}
+        {kind === "careers" && <OpportunityBoard initialType="JOB" />}
+        {kind === "internship-board" && <OpportunityBoard initialType="INTERNSHIP" />}
         {kind === "faq" && <FaqContent />}
         {kind === "watch-intro" && <IntroContent />}
         {kind === "student-services" && <StudentServicesContent />}

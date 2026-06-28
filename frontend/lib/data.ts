@@ -19,6 +19,7 @@ export const navItems = [
   { label: "DevSecAI", href: "/devsecai-bootcamp" },
   { label: "Events", href: "/events" },
   { label: "Daily Insights", href: "/daily-insights" },
+  { label: "Opportunities", href: "/opportunities" },
   { label: "About Us", href: "/about" },
   { label: "Contact", href: "/contact" }
 ];
@@ -343,9 +344,42 @@ export const teamMembers = [
 ];
 
 export const jobs = [
-  { title: "Junior SOC Analyst", company: "Partner Company", location: "Remote / Pakistan", type: "Full-time", tag: "Cybersecurity" },
-  { title: "Cloud Security Intern", company: "AtechSkills Talent Network", location: "Hybrid", type: "Internship", tag: "Cloud" },
-  { title: "DevSecOps Associate", company: "Hiring Partner", location: "Lahore", type: "Full-time", tag: "DevSecOps" }
+  {
+    slug: "junior-soc-analyst-remote-pakistan",
+    title: "Junior SOC Analyst",
+    company: "AtechSkills Hiring Partner",
+    location: "Remote / Pakistan",
+    workMode: "Remote",
+    type: "Full-time",
+    opportunityType: "JOB",
+    tag: "Cybersecurity",
+    summary: "Entry-level SOC monitoring role for learners with networking, Linux, alert triage, and reporting foundations.",
+    applyUrl: "/contact"
+  },
+  {
+    slug: "cloud-security-internship-atechskills-network",
+    title: "Cloud Security Intern",
+    company: "AtechSkills Talent Network",
+    location: "Lahore / Hybrid",
+    workMode: "Hybrid",
+    type: "Internship",
+    opportunityType: "INTERNSHIP",
+    tag: "Cloud",
+    summary: "Practical internship track for students learning cloud security, IAM checks, documentation, and lab-based reviews.",
+    applyUrl: "/contact"
+  },
+  {
+    slug: "devsecops-associate-lahore",
+    title: "DevSecOps Associate",
+    company: "Hiring Partner",
+    location: "Lahore",
+    workMode: "On-site",
+    type: "Full-time",
+    opportunityType: "JOB",
+    tag: "DevSecOps",
+    summary: "Associate role for candidates who can support CI/CD security checks, documentation, and cloud deployment workflows.",
+    applyUrl: "/contact"
+  }
 ];
 
 export const faqs = [

@@ -61,6 +61,31 @@ publicRouter.post("/events/:slug/register", validate(eventRegistrationSchema), a
 }));
 publicRouter.get("/insights", asyncRoute(async (_req, res) => res.json(await prisma.insightsPost.findMany({ where: { visibility: "PUBLISHED" }, orderBy: { publishedAt: "desc" } }))));
 publicRouter.get("/insights/:slug", asyncRoute(async (req, res) => res.json(await prisma.insightsPost.findUnique({ where: { slug: String(req.params.slug) }, include: { category: true, tags: { include: { tag: true } } } }))));
+publicRouter.get("/opportunities", asyncRoute(async (req, res) => {
+  const type = typeof req.query.type === "string" ? req.query.type.toUpperCase() : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const opportunities = await prisma.opportunity.findMany({
+    where: {
+      visibility: "PUBLISHED",
+      type: type === "JOB" || type === "INTERNSHIP" || type === "APPRENTICESHIP" || type === "FELLOWSHIP" ? type : undefined,
+      OR: search
+        ? [
+            { title: { contains: search, mode: "insensitive" } },
+            { company: { contains: search, mode: "insensitive" } },
+            { summary: { contains: search, mode: "insensitive" } },
+            { location: { contains: search, mode: "insensitive" } }
+          ]
+        : undefined
+    },
+    orderBy: [{ isFeatured: "desc" }, { publishedAt: "desc" }]
+  });
+  res.json(opportunities);
+}));
+publicRouter.get("/opportunities/:slug", asyncRoute(async (req, res) => {
+  const opportunity = await prisma.opportunity.findUnique({ where: { slug: String(req.params.slug) } });
+  if (!opportunity || opportunity.visibility !== "PUBLISHED") return res.status(404).json({ error: "Opportunity not found" });
+  res.json(opportunity);
+}));
 publicRouter.post("/forms/:type", validate(formSchema), asyncRoute(async (req, res) => {
   const requestType = String(req.params.type);
   const ticket = await withDbRetry(() => prisma.supportTicket.create({

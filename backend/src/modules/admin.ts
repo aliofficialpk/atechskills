@@ -39,6 +39,27 @@ const insightSchema = z.object({
   })
 });
 
+const opportunitySchema = z.object({
+  body: z.object({
+    title: z.string().min(3),
+    slug: z.string().min(3),
+    type: z.enum(["JOB", "INTERNSHIP", "APPRENTICESHIP", "FELLOWSHIP"]),
+    company: z.string().min(2),
+    location: z.string().min(2),
+    workMode: z.string().optional(),
+    employmentType: z.string().optional(),
+    summary: z.string().min(10),
+    description: z.string().min(10),
+    requirements: z.array(z.string()).default([]),
+    benefits: z.array(z.string()).default([]),
+    applyUrl: z.string().url(),
+    applyEmail: z.string().email().optional(),
+    deadline: z.string().datetime().optional(),
+    visibility: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).default("DRAFT"),
+    isFeatured: z.boolean().default(false)
+  })
+});
+
 const staffSchema = z.object({
   body: z.object({
     name: z.string().min(2),
@@ -78,6 +99,9 @@ adminRouter.get("/overview", asyncRoute(async (_req, res) => {
 adminRouter.get("/users", asyncRoute(async (_req, res) => res.json(await prisma.user.findMany({ include: { roles: { include: { role: true } } } }))));
 adminRouter.get("/roles", asyncRoute(async (_req, res) => res.json(await prisma.role.findMany({ include: { permissions: { include: { permission: true } } } }))));
 adminRouter.get("/tickets", asyncRoute(async (_req, res) => res.json(await prisma.supportTicket.findMany({ include: { messages: true }, orderBy: { createdAt: "desc" } }))));
+adminRouter.get("/opportunities", asyncRoute(async (_req, res) => {
+  res.json(await prisma.opportunity.findMany({ orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }] }));
+}));
 
 adminRouter.post("/staff", validate(staffSchema), asyncRoute(async (req, res) => {
   const passwordHash = await bcrypt.hash(req.body.password, 12);
@@ -131,6 +155,43 @@ adminRouter.patch("/insights/:id/publish", asyncRoute(async (req, res) => {
   const post = await prisma.insightsPost.update({ where: { id: String(req.params.id) }, data: { visibility: "PUBLISHED", publishedAt: new Date() } });
   await audit(req.user?.id, "INSIGHT_PUBLISHED", "InsightsPost", post.id);
   res.json(post);
+}));
+
+adminRouter.post("/opportunities", validate(opportunitySchema), asyncRoute(async (req, res) => {
+  const opportunity = await prisma.opportunity.create({
+    data: {
+      ...req.body,
+      deadline: req.body.deadline ? new Date(req.body.deadline) : undefined,
+      publishedAt: req.body.visibility === "PUBLISHED" ? new Date() : undefined
+    }
+  });
+  await audit(req.user?.id, "OPPORTUNITY_CREATED", "Opportunity", opportunity.id);
+  res.status(201).json(opportunity);
+}));
+
+adminRouter.put("/opportunities/:id", validate(opportunitySchema), asyncRoute(async (req, res) => {
+  const opportunity = await prisma.opportunity.update({
+    where: { id: String(req.params.id) },
+    data: {
+      ...req.body,
+      deadline: req.body.deadline ? new Date(req.body.deadline) : null,
+      publishedAt: req.body.visibility === "PUBLISHED" ? new Date() : null
+    }
+  });
+  await audit(req.user?.id, "OPPORTUNITY_UPDATED", "Opportunity", opportunity.id);
+  res.json(opportunity);
+}));
+
+adminRouter.patch("/opportunities/:id/publish", asyncRoute(async (req, res) => {
+  const opportunity = await prisma.opportunity.update({ where: { id: String(req.params.id) }, data: { visibility: "PUBLISHED", publishedAt: new Date() } });
+  await audit(req.user?.id, "OPPORTUNITY_PUBLISHED", "Opportunity", opportunity.id);
+  res.json(opportunity);
+}));
+
+adminRouter.delete("/opportunities/:id", asyncRoute(async (req, res) => {
+  const opportunity = await prisma.opportunity.update({ where: { id: String(req.params.id) }, data: { visibility: "ARCHIVED" } });
+  await audit(req.user?.id, "OPPORTUNITY_ARCHIVED", "Opportunity", opportunity.id);
+  res.json(opportunity);
 }));
 
 adminRouter.post("/team", asyncRoute(async (req, res) => {

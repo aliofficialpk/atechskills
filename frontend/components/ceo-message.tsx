@@ -1,9 +1,10 @@
 import Image from "next/image";
-import { Award, BookOpenCheck, Target, UsersRound } from "lucide-react";
+import { Award, BookOpenCheck, ExternalLink, Target, UsersRound } from "lucide-react";
 
 const paragraphs = [
   "At AtechSkills, our mission is to empower individuals with industry-relevant skills through practical learning, real-world projects, and continuous innovation.",
-  "We are committed to delivering quality education in DevSecOps, AI, Cybersecurity, and emerging technologies to help learners grow, succeed, and lead."
+  "We are committed to delivering quality education in DevSecOps, AI, Cybersecurity, and emerging technologies to help learners grow, succeed, and lead.",
+  "Mustansar Riaz also leads Atechsole, a software company focused on web and mobile development, cybersecurity, AI, automation, ERP/CMS solutions, and digital transformation, strengthening the bridge between training and real industry delivery."
 ];
 
 const stats = [
@@ -58,6 +59,14 @@ function Signature({ compact = false }: { compact?: boolean }) {
       </p>
       <p className={compact ? "mt-3 text-xl font-black text-brand-green" : "mt-3 text-xl font-black text-brand-green"}>Mustansar Riaz</p>
       <p className={compact ? "mt-1 text-sm text-slate-500" : "mt-1 text-sm text-slate-500"}>Chief Executive Officer, AtechSkills</p>
+      <a
+        href="https://www.atechsole.com/"
+        target="_blank"
+        rel="noreferrer"
+        className="mt-3 inline-flex items-center gap-2 rounded-md border border-brand-green/20 bg-brand-mint px-3 py-2 text-xs font-black text-brand-green transition hover:border-brand-green hover:bg-white"
+      >
+        Founder / CEO, Atechsole <ExternalLink size={14} />
+      </a>
     </div>
   );
 }
