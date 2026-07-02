@@ -29,7 +29,7 @@ export function PageHero({ eyebrow, title, text, ctaHref = "/register", cta = "G
 export function CoursesIndex() {
   return (
     <>
-      <PageHero eyebrow="Courses" title="Career-ready learning paths for modern technology teams" text="Browse live cohorts, bootcamps, and self-paced LMS programs with assignments, attendance, recordings, certificates, and progress tracking." ctaHref="/courses/devsecai-bootcamp-2025/enroll" cta="Enroll in DevSecAI" />
+      <PageHero eyebrow="Courses" title="Career-ready learning paths for modern technology teams" text="Browse live cohorts, bootcamps, and self-paced LMS programs with assignments, attendance, recordings, certificates, and progress tracking." ctaHref="/courses" cta="Browse Courses" />
       <CourseCatalog />
     </>
   );
@@ -218,7 +218,7 @@ function ProgramContent({ type }: { type: "bootcamp" | "summit" }) {
         <div className="mt-5 grid gap-4 text-sm text-slate-700">
           {(isBootcamp ? ["Application", "Enrollment", "Live training", "Attendance", "Assignments", "Certificate"] : ["Registration", "Speaker schedule", "Check-in", "Sessions", "Gallery", "Follow-up"]).map((step) => <p key={step} className="flex gap-2"><CheckCircle2 className="text-brand-green" size={17} /> {step}</p>)}
         </div>
-        <ButtonLink href={isBootcamp ? "/courses/devsecai-bootcamp-2025/enroll" : "/events/devsecai-summit-2025/register"} className="mt-6 w-full">{isBootcamp ? "Enroll in Bootcamp" : "Register for Summit"}</ButtonLink>
+        <ButtonLink href={isBootcamp ? "/courses" : "/events/devsecai-summit-2025/register"} className="mt-6 w-full">{isBootcamp ? "Browse Courses" : "Register for Summit"}</ButtonLink>
       </Card>
     </div>
   );
@@ -284,7 +284,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" | "forgot-passwo
   return (
     <section className="min-h-screen bg-slate-50 py-12">
       <div className="container-page grid min-h-[calc(100vh-96px)] items-center gap-8 lg:grid-cols-[1fr_430px]">
-        <div><Badge>AtechSkills LMS</Badge><h1 className="mt-4 text-5xl font-black">{title}</h1><p className="mt-5 text-lg leading-8 text-slate-600">Access dashboards, enrolled content, live lectures, recordings, support, certificates, and admin tools based on your role.</p><div className="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-brand-green"><p className="font-bold">Admin access for setup</p><p>Username: admin</p><p>Password: admin234</p></div></div>
+        <div><Badge>AtechSkills LMS</Badge><h1 className="mt-4 text-5xl font-black">{title}</h1><p className="mt-5 text-lg leading-8 text-slate-600">Access dashboards, enrolled content, live lectures, recordings, support, certificates, and admin tools based on your role.</p><div className="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-brand-green"><p className="font-bold">Secure portal access</p><p>Use your assigned AtechSkills account credentials to continue.</p></div></div>
         <AuthForm mode={mode} />
       </div>
     </section>

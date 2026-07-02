@@ -56,6 +56,14 @@ function courseImage(course: Course) {
   return course.thumbnailUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
 }
 
+function publicCourses(value: unknown): Course[] {
+  return asCourseArray(value).filter((course) => course.status === "PUBLISHED");
+}
+
+function asCourseArray(value: unknown): Course[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function CourseEmptyState() {
   return (
     <Card className="p-8 text-center">
@@ -81,7 +89,7 @@ export function CourseCatalog() {
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (!ok || !Array.isArray(data)) throw new Error(data.error ?? "Unable to load courses");
-        setCourses(data);
+        setCourses(publicCourses(data));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load courses"))
       .finally(() => setLoading(false));
@@ -122,7 +130,7 @@ export function CourseHomePreview() {
   useEffect(() => {
     fetch(`${apiBase}/courses`)
       .then((response) => response.json())
-      .then((data) => setCourses(Array.isArray(data) ? data.slice(0, 3) : []))
+      .then((data) => setCourses(publicCourses(data).slice(0, 3)))
       .catch(() => setCourses([]));
   }, []);
 
@@ -168,6 +176,7 @@ export function CourseDetailsView({ slug }: { slug: string }) {
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (!ok) throw new Error(data.error ?? "Course not found");
+        if (data.status !== "PUBLISHED") throw new Error("Course not found");
         setCourse(data);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load course"))
@@ -248,6 +257,7 @@ export function EnrollmentCourseGate({ slug }: { slug: string }) {
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (!ok) throw new Error(data.error ?? "Course not found");
+        if (data.status !== "PUBLISHED") throw new Error("Course not found");
         setCourse(data);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load course"))

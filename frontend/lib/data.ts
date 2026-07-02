@@ -33,59 +33,25 @@ export const categories = [
   { name: "Data Science", slug: "data-science", icon: BarChart3, summary: "Analyze data and build data-driven solutions." }
 ];
 
-export const courses = [
-  {
-    slug: "devsecai-bootcamp-2025",
-    title: "DevSecAI Bootcamp 2025",
-    category: "DevSecOps",
-    level: "Intermediate",
-    price: 249,
-    discountPrice: 199,
-    duration: "8 weeks",
-    seats: 40,
-    status: "Published",
-    instructor: "AtechSkills Faculty",
-    summary: "Hands-on secure AI, DevSecOps, cloud security, and practical automation for future-ready professionals.",
-    outcomes: ["Threat model AI-enabled apps", "Build secure CI/CD pipelines", "Automate security checks", "Present a capstone project"],
-    prerequisites: ["Basic programming", "Linux fundamentals", "Interest in security"],
-    modules: ["Secure SDLC", "Cloud Security", "AI Risk", "DevSecOps Labs", "Capstone"],
-    image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80"
-  },
-  {
-    slug: "cloud-security-professional",
-    title: "Cloud Security Professional",
-    category: "Cloud Computing",
-    level: "Advanced",
-    price: 299,
-    discountPrice: 249,
-    duration: "10 weeks",
-    seats: 35,
-    status: "Published",
-    instructor: "Cloud Security Team",
-    summary: "Secure cloud-native systems, IAM, workloads, networks, and incident response on AWS and Azure.",
-    outcomes: ["Design cloud guardrails", "Audit IAM", "Secure workloads", "Build incident playbooks"],
-    prerequisites: ["Cloud basics", "Networking basics"],
-    modules: ["IAM", "Network Security", "Workload Protection", "Monitoring", "Incident Response"],
-    image: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80"
-  },
-  {
-    slug: "cybersecurity-career-track",
-    title: "Cybersecurity Career Track",
-    category: "Cybersecurity",
-    level: "Beginner",
-    price: 179,
-    discountPrice: 149,
-    duration: "12 weeks",
-    seats: 60,
-    status: "Published",
-    instructor: "Security Operations Faculty",
-    summary: "Start from fundamentals and move into SOC workflows, labs, detection, reporting, and portfolio readiness.",
-    outcomes: ["Use security tooling", "Analyze alerts", "Write reports", "Prepare for interviews"],
-    prerequisites: ["Computer basics"],
-    modules: ["Networking", "Linux", "SOC Tools", "Blue Team Labs", "Career Prep"],
-    image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80"
-  }
-];
+type StaticCourse = {
+  slug: string;
+  title: string;
+  category: string;
+  level: string;
+  price: number;
+  discountPrice: number;
+  duration: string;
+  seats: number;
+  status: string;
+  instructor: string;
+  summary: string;
+  outcomes: string[];
+  prerequisites: string[];
+  modules: string[];
+  image: string;
+};
+
+export const courses: StaticCourse[] = [];
 
 export const events = [
   {

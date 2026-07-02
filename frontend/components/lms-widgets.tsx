@@ -17,6 +17,10 @@ type ApiState<T> = {
   loading: boolean;
 };
 
+function asArray<T = any>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export function StudentLearningCenter() {
   const [state, setState] = useState<ApiState<any>>({ loading: true });
   const [sessionId, setSessionId] = useState("");
@@ -53,8 +57,8 @@ export function StudentLearningCenter() {
     load();
   }, []);
 
-  const enrollments = state.data?.student?.enrollments ?? [];
-  const notifications = state.data?.notifications ?? [];
+  const enrollments = asArray(state.data?.student?.enrollments);
+  const notifications = asArray(state.data?.notifications);
 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -285,7 +289,7 @@ function AdminCourseManager() {
           <input name="seatCapacity" type="number" min="1" placeholder="Seat capacity" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
           <select name="instructorId" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
             <option value="">Assign teacher later</option>
-            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user.name} - {teacher.user.email}</option>)}
+            {asArray(teachers).map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user?.name ?? "Teacher"} - {teacher.user?.email ?? "No email"}</option>)}
           </select>
         </div>
         <textarea name="scheduleText" rows={2} placeholder="Schedule text, e.g. Saturdays 8 PM PKT" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
@@ -309,8 +313,8 @@ function AdminCourseManager() {
       {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
       <div className="mt-6 grid gap-3">
         {loading && <p className="text-sm text-slate-500">Loading courses...</p>}
-        {!loading && courses.length === 0 && <p className="text-sm text-slate-500">No courses created yet. Add the first course above.</p>}
-        {courses.map((course) => (
+        {!loading && asArray(courses).length === 0 && <p className="text-sm text-slate-500">No courses created yet. Add the first course above.</p>}
+        {asArray(courses).map((course) => (
           <div key={course.id} className="rounded-md border border-slate-200 p-4">
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
               <div>
@@ -320,7 +324,7 @@ function AdminCourseManager() {
               <div className="flex flex-wrap gap-2">
                 <select onChange={(event) => assignTeacher(course.id, event.target.value)} defaultValue="" className="rounded-md border border-slate-200 px-3 py-2 text-sm">
                   <option value="">Assign teacher</option>
-                  {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user.name}</option>)}
+                  {asArray(teachers).map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user?.name ?? "Teacher"}</option>)}
                 </select>
                 {course.status !== "PUBLISHED" && <button onClick={() => publish(course.id)} className="rounded-md bg-brand-green px-3 py-2 text-xs font-bold text-white">Publish</button>}
                 <button onClick={() => archive(course.id)} className="rounded-md bg-brand-red px-3 py-2 text-xs font-bold text-white">Archive</button>
@@ -452,7 +456,7 @@ function AdminOpportunityManager() {
       <div className="mt-5 grid gap-3">
         {state.loading && <p className="text-sm text-slate-500">Loading opportunities...</p>}
         {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
-        {(state.data ?? []).slice(0, 4).map((item) => (
+        {asArray(state.data).slice(0, 4).map((item) => (
           <div key={item.id} className="rounded-md border border-slate-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><h3 className="font-bold">{item.title}</h3><p className="text-sm text-slate-600">{item.company} - {item.type} - {item.visibility}</p></div>
@@ -517,7 +521,7 @@ function AdminScheduleForm() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/admin-courses`, { headers: authHeaders() }).then((response) => response.json()).then(setCourses).catch(() => setCourses([]));
+    fetch(`${apiBase}/admin-courses`, { headers: authHeaders() }).then((response) => response.json()).then((data) => setCourses(asArray(data))).catch(() => setCourses([]));
   }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -557,7 +561,7 @@ function AdminScheduleForm() {
       <form onSubmit={submit} className="mt-5 grid gap-3">
         <select required name="courseId" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
           <option value="">Select course</option>
-          {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+          {asArray(courses).map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
         </select>
         <input required name="titlePrefix" placeholder="Title prefix, e.g. DevSecAI Live Class" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
         <input required name="firstStartsAt" type="datetime-local" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
@@ -617,7 +621,7 @@ function AdminEnrollmentQueue() {
       <div className="mt-5 grid gap-3">
         {state.loading && <p className="text-sm text-slate-500">Loading requests...</p>}
         {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
-        {(state.data ?? []).map((item) => (
+        {asArray(state.data).map((item) => (
           <div key={item.id} className="rounded-md border border-slate-200 p-4">
             <h3 className="font-bold">{item.student.user.name}</h3>
             <p className="mt-1 text-sm text-slate-600">{item.student.user.email} - {item.course.title}</p>
@@ -629,7 +633,7 @@ function AdminEnrollmentQueue() {
             </div>
           </div>
         ))}
-        {!state.loading && !state.error && (state.data ?? []).length === 0 && <p className="text-sm text-slate-500">No pending enrollment requests.</p>}
+        {!state.loading && !state.error && asArray(state.data).length === 0 && <p className="text-sm text-slate-500">No pending enrollment requests.</p>}
       </div>
     </Card>
   );
@@ -655,7 +659,7 @@ function AdminPerformancePanel() {
       <div className="mt-5 grid gap-3">
         {state.loading && <p className="text-sm text-slate-500">Loading performance...</p>}
         {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
-        {(state.data ?? []).slice(0, 6).map((student) => (
+        {asArray(state.data).slice(0, 6).map((student) => (
           <div key={student.id} className="grid gap-2 rounded-md border border-slate-200 p-4 md:grid-cols-[1fr_auto] md:items-center">
             <div><h3 className="font-bold">{student.name}</h3><p className="text-sm text-slate-600">{student.email}</p></div>
             <div className="text-sm text-slate-700">{student.attendancePercentage}% attendance - {student.averageQuizScore}% quiz - {student.liveMinutes} live min</div>

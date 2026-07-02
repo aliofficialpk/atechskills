@@ -114,7 +114,6 @@ export function CeoMessageSection({ compact = false, contained = true }: { compa
                   fill
                   sizes="150px"
                   className="object-cover object-center"
-                  priority={!compact}
                 />
               </div>
               <div className="min-w-0">
@@ -146,7 +145,6 @@ export function CeoMessageSection({ compact = false, contained = true }: { compa
               fill
               sizes="(min-width: 1280px) 422px, 34vw"
               className="object-cover object-center"
-              priority={!compact}
             />
           </div>
 
