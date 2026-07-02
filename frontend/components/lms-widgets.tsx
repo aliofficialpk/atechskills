@@ -147,8 +147,8 @@ function AdminCourseManager() {
     setLoading(true);
     try {
       const [courseResponse, teacherResponse] = await Promise.all([
-        fetch(`${apiBase}/lms/admin/courses`, { headers: authHeaders() }),
-        fetch(`${apiBase}/lms/admin/teachers`, { headers: authHeaders() })
+        fetch(`${apiBase}/admin/courses`, { headers: authHeaders() }),
+        fetch(`${apiBase}/admin/teachers`, { headers: authHeaders() })
       ]);
       const courseData = await courseResponse.json();
       const teacherData = await teacherResponse.json();
@@ -197,7 +197,7 @@ function AdminCourseManager() {
       sections
     };
     try {
-      const response = await fetch(`${apiBase}/lms/courses`, {
+      const response = await fetch(`${apiBase}/admin/courses`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(payload)
@@ -214,7 +214,7 @@ function AdminCourseManager() {
 
   async function publish(id: string) {
     try {
-      const response = await fetch(`${apiBase}/lms/courses/${id}/publish`, { method: "PATCH", headers: authHeaders() });
+      const response = await fetch(`${apiBase}/admin/courses/${id}/publish`, { method: "PATCH", headers: authHeaders() });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to publish course");
       setMessage(`Published: ${data.title}`);
@@ -226,7 +226,7 @@ function AdminCourseManager() {
 
   async function archive(id: string) {
     try {
-      const response = await fetch(`${apiBase}/lms/courses/${id}`, { method: "DELETE", headers: authHeaders() });
+      const response = await fetch(`${apiBase}/admin/courses/${id}`, { method: "DELETE", headers: authHeaders() });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to archive course");
       setMessage(`Archived: ${data.title}`);
@@ -239,7 +239,7 @@ function AdminCourseManager() {
   async function assignTeacher(courseId: string, teacherId: string) {
     if (!teacherId) return;
     try {
-      const response = await fetch(`${apiBase}/lms/courses/${courseId}/assign-teacher`, {
+      const response = await fetch(`${apiBase}/admin/courses/${courseId}/assign-teacher`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ teacherId })
@@ -517,7 +517,7 @@ function AdminScheduleForm() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/lms/admin/courses`, { headers: authHeaders() }).then((response) => response.json()).then(setCourses).catch(() => setCourses([]));
+    fetch(`${apiBase}/admin/courses`, { headers: authHeaders() }).then((response) => response.json()).then(setCourses).catch(() => setCourses([]));
   }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {

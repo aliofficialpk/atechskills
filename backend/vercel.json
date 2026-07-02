@@ -60,6 +60,21 @@
     "api/v1/admin/opportunities/[id]/publish.ts": {
       "maxDuration": 60
     },
+    "api/v1/admin/courses.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/courses/[id].ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/courses/[id]/assign-teacher.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/courses/[id]/publish.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin/teachers.ts": {
+      "maxDuration": 60
+    },
     "api/v1/courses.ts": {
       "maxDuration": 60
     },
