@@ -234,8 +234,8 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
       <h2 className="text-xl font-bold text-slate-950">Enroll in {courseTitle}</h2>
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-brand-green">
         <p className="font-bold">Payment Instructions</p>
-        <p className="mt-1">Meezan Bank - AtechSkills</p>
-        <p className="mt-1 text-lg font-black tracking-wide">9235875734895</p>
+        <p className="mt-1">Bank Alfalah - ATechSkills</p>
+        <p className="mt-1 text-lg font-black tracking-wide">55105002806178</p>
         <p className="mt-2 text-xs">Send the fee, then upload a screenshot/PDF proof below. Admin will verify and confirm your enrollment.</p>
       </div>
       <label className="grid gap-2 text-sm font-medium text-slate-700">

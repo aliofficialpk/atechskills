@@ -23,6 +23,8 @@ const courseSchema = z.object({
     title: z.string().min(3),
     slug: z.string().min(3),
     summary: z.string().min(10),
+    description: z.string().optional(),
+    thumbnailUrl: z.string().url().optional().or(z.literal("")),
     price: z.number().nonnegative().default(0),
     discountPrice: z.number().nonnegative().optional(),
     level: z.string().default("Beginner"),
@@ -30,8 +32,21 @@ const courseSchema = z.object({
     isFree: z.boolean().default(false),
     classStartAt: z.string().datetime().optional(),
     scheduleText: z.string().optional(),
+    seatCapacity: z.number().int().positive().optional(),
+    prerequisites: z.array(z.string()).default([]),
+    outcomes: z.array(z.string()).default([]),
+    status: z.enum(["DRAFT", "PUBLISHED", "UNPUBLISHED", "ARCHIVED"]).default("DRAFT"),
     categoryId: z.string().optional(),
-    instructorId: z.string().optional()
+    instructorId: z.string().optional(),
+    sections: z.array(z.object({
+      title: z.string().min(2),
+      lessons: z.array(z.object({
+        title: z.string().min(2),
+        content: z.string().optional(),
+        videoUrl: z.string().url().optional().or(z.literal("")),
+        resourceUrl: z.string().url().optional().or(z.literal(""))
+      })).default([])
+    })).default([])
   })
 });
 
@@ -211,19 +226,141 @@ lmsRouter.get("/me", asyncRoute(async (req, res) => {
   res.json(user);
 }));
 
+function normalizeCoursePayload(body: z.infer<typeof courseSchema>["body"]) {
+  return {
+    title: body.title,
+    slug: body.slug,
+    summary: body.summary,
+    description: body.description,
+    thumbnailUrl: body.thumbnailUrl || undefined,
+    price: body.price,
+    discountPrice: body.discountPrice,
+    level: body.level,
+    duration: body.duration,
+    isFree: body.isFree,
+    classStartAt: body.classStartAt ? new Date(body.classStartAt) : undefined,
+    scheduleText: body.scheduleText,
+    seatCapacity: body.seatCapacity,
+    prerequisites: body.prerequisites,
+    outcomes: body.outcomes,
+    status: body.status,
+    categoryId: body.categoryId || undefined,
+    instructorId: body.instructorId || undefined
+  };
+}
+
+lmsRouter.get("/admin/courses", requireRole("Super Admin", "Admin"), asyncRoute(async (_req, res) => {
+  const courses = await prisma.course.findMany({
+    include: {
+      category: true,
+      instructor: { include: { user: true } },
+      sections: { include: { lessons: { orderBy: { position: "asc" } } }, orderBy: { position: "asc" } },
+      enrollments: true
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json(courses);
+}));
+
+lmsRouter.get("/admin/teachers", requireRole("Super Admin", "Admin"), asyncRoute(async (_req, res) => {
+  const teachers = await prisma.teacher.findMany({
+    include: { user: true, courses: { select: { id: true, title: true, slug: true } } },
+    orderBy: { user: { name: "asc" } }
+  });
+  res.json(teachers);
+}));
+
+lmsRouter.get("/teacher/courses", requireRole("Teacher"), asyncRoute(async (req, res) => {
+  const teacher = await prisma.teacher.findUnique({ where: { userId: req.user!.id } });
+  if (!teacher) return res.json([]);
+  const courses = await prisma.course.findMany({
+    where: { instructorId: teacher.id },
+    include: { sections: { include: { lessons: true }, orderBy: { position: "asc" } }, sessions: true, assignments: true, enrollments: { include: { student: { include: { user: true } } } } },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json(courses);
+}));
+
 lmsRouter.post("/courses", requirePermission("courses.manage"), validate(courseSchema), asyncRoute(async (req, res) => {
+  const body = req.body as z.infer<typeof courseSchema>["body"];
   const course = await prisma.course.create({
     data: {
-      ...req.body,
-      classStartAt: req.body.classStartAt ? new Date(req.body.classStartAt) : undefined
+      ...normalizeCoursePayload(body),
+      sections: {
+        create: body.sections.map((section, sectionIndex) => ({
+          title: section.title,
+          position: sectionIndex + 1,
+          lessons: {
+            create: section.lessons.map((lesson, lessonIndex) => ({
+              title: lesson.title,
+              content: lesson.content,
+              videoUrl: lesson.videoUrl || undefined,
+              resourceUrl: lesson.resourceUrl || undefined,
+              position: lessonIndex + 1
+            }))
+          }
+        }))
+      }
     }
   });
   await prisma.auditLog.create({ data: { actorId: req.user!.id, action: "COURSE_CREATED", entity: "Course", entityId: course.id } });
   res.status(201).json(course);
 }));
 
+lmsRouter.put("/courses/:id", requirePermission("courses.manage"), validate(courseSchema), asyncRoute(async (req, res) => {
+  const body = req.body as z.infer<typeof courseSchema>["body"];
+  const courseId = String(req.params.id);
+  await prisma.$transaction([
+    prisma.lesson.deleteMany({ where: { section: { courseId } } }),
+    prisma.courseSection.deleteMany({ where: { courseId } })
+  ]);
+  const course = await prisma.course.update({
+    where: { id: courseId },
+    data: {
+      ...normalizeCoursePayload(body),
+      sections: {
+        create: body.sections.map((section, sectionIndex) => ({
+          title: section.title,
+          position: sectionIndex + 1,
+          lessons: {
+            create: section.lessons.map((lesson, lessonIndex) => ({
+              title: lesson.title,
+              content: lesson.content,
+              videoUrl: lesson.videoUrl || undefined,
+              resourceUrl: lesson.resourceUrl || undefined,
+              position: lessonIndex + 1
+            }))
+          }
+        }))
+      }
+    },
+    include: { sections: { include: { lessons: true } }, instructor: { include: { user: true } } }
+  });
+  await prisma.auditLog.create({ data: { actorId: req.user!.id, action: "COURSE_UPDATED", entity: "Course", entityId: course.id } });
+  res.json(course);
+}));
+
+lmsRouter.patch("/courses/:id/assign-teacher", requireRole("Super Admin", "Admin"), asyncRoute(async (req, res) => {
+  const teacherId = String(req.body.teacherId ?? "");
+  const teacher = await prisma.teacher.findUnique({ where: { id: teacherId }, include: { user: true } });
+  if (!teacher) return res.status(404).json({ error: "Teacher not found" });
+  const course = await prisma.course.update({
+    where: { id: String(req.params.id) },
+    data: { instructorId: teacher.id },
+    include: { instructor: { include: { user: true } } }
+  });
+  await prisma.auditLog.create({ data: { actorId: req.user!.id, action: "COURSE_TEACHER_ASSIGNED", entity: "Course", entityId: course.id, metadata: { teacherId: teacher.id } } });
+  res.json(course);
+}));
+
 lmsRouter.patch("/courses/:id/publish", requirePermission("courses.manage"), asyncRoute(async (req, res) => {
   const course = await prisma.course.update({ where: { id: String(req.params.id) }, data: { status: "PUBLISHED" } });
+  res.json(course);
+}));
+
+lmsRouter.delete("/courses/:id", requireRole("Super Admin", "Admin"), asyncRoute(async (req, res) => {
+  const course = await prisma.course.update({ where: { id: String(req.params.id) }, data: { status: "ARCHIVED" } });
+  await prisma.auditLog.create({ data: { actorId: req.user!.id, action: "COURSE_ARCHIVED", entity: "Course", entityId: course.id } });
   res.json(course);
 }));
 
@@ -272,7 +409,7 @@ lmsRouter.post("/courses/:slug/enroll", upload.single("paymentProof"), asyncRout
 
   res.status(201).json({
     message: isFree ? "Enrollment activated" : "Enrollment request submitted for admin verification",
-    bank: { name: "Meezan Bank", accountTitle: "AtechSkills", accountNumber: "9235875734895" },
+    bank: { name: "Bank Alfalah", accountTitle: "ATechSkills", accountNumber: "55105002806178" },
     enrollment
   });
 }));

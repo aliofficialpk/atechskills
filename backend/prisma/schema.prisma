@@ -241,9 +241,9 @@ model Enrollment {
   status               EnrollmentStatus @default(PENDING)
   paymentStatus        PaymentStatus    @default(PENDING_PROOF)
   paidAmount           Decimal?
-  paymentMethod        String           @default("Meezan Bank")
-  paymentAccountTitle  String           @default("AtechSkills")
-  paymentAccountNumber String           @default("9235875734895")
+  paymentMethod        String           @default("Bank Alfalah")
+  paymentAccountTitle  String           @default("ATechSkills")
+  paymentAccountNumber String           @default("55105002806178")
   paymentProofUrl      String?
   paymentProofPublicId String?
   paymentSubmittedAt   DateTime?

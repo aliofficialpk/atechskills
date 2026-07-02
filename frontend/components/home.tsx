@@ -3,8 +3,8 @@ import Link from "next/link";
 import { ArrowRight, Calendar, CirclePlay, Clock, MapPin, ShieldCheck } from "lucide-react";
 import { Badge, ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { CeoMessageSection } from "@/components/ceo-message";
-import { categories, courses, dashboardStats, events, insights, testimonials } from "@/lib/data";
-import { formatCurrency } from "@/lib/utils";
+import { CourseHomePreview } from "@/components/course-experience";
+import { categories, dashboardStats, events, insights, testimonials } from "@/lib/data";
 
 export function HomePage() {
   return (
@@ -50,9 +50,9 @@ export function HomePage() {
             </div>
             <Card className="absolute bottom-6 left-4 max-w-[235px] p-5 sm:-left-5 sm:bottom-12 sm:max-w-[250px]">
               <p className="text-xs text-slate-500">Upcoming Bootcamp</p>
-              <h3 className="mt-1 font-bold">DevSecAI Bootcamp 2025</h3>
+              <h3 className="mt-1 font-bold">Explore Published Cohorts</h3>
               <div className="mt-3 flex gap-3 text-xs text-slate-600"><span className="flex items-center gap-1"><Clock size={14} /> 8 Weeks</span><span>Live + Hands-on</span></div>
-              <ButtonLink href="/courses/devsecai-bootcamp-2025/enroll" variant="secondary" className="mt-4 min-h-9 px-3 py-2">Enroll Now</ButtonLink>
+              <ButtonLink href="/courses" variant="secondary" className="mt-4 min-h-9 px-3 py-2">View Courses</ButtonLink>
             </Card>
             <Card className="absolute right-4 top-24 max-w-[220px] p-5 sm:-right-5 sm:max-w-[235px]">
               <p className="flex items-center gap-2 text-xs font-semibold text-brand-red"><Calendar size={15} /> Next Event</p>
@@ -122,20 +122,7 @@ export function HomePage() {
       <section className="container-page py-16">
         <SectionHeading eyebrow="LMS Foundation" title="Courses built for completion, proof, and career outcomes" text="Live sessions, attendance, recordings, assignments, quizzes, certificates, and performance tracking are organized around each learner." />
         <div className="grid gap-5 md:grid-cols-3">
-          {courses.map((course) => (
-            <Card key={course.slug} className="overflow-hidden">
-              <Image src={course.image} alt={course.title} width={640} height={360} className="h-48 w-full object-cover" />
-              <div className="p-5">
-                <Badge>{course.category}</Badge>
-                <h3 className="mt-3 text-xl font-bold">{course.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{course.summary}</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="font-black text-brand-green">{formatCurrency(course.discountPrice)}</span>
-                  <ButtonLink href={`/courses/${course.slug}`} variant="secondary" className="min-h-9 px-3 py-2">Details</ButtonLink>
-                </div>
-              </div>
-            </Card>
-          ))}
+          <CourseHomePreview />
         </div>
       </section>
     </>

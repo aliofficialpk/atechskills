@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, Clock, FileText, Filter, PlayCi
 import { Badge, ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { CeoMessageSection } from "@/components/ceo-message";
 import { AuthForm, EnrollmentRequestForm, SmartForm } from "@/components/forms";
+import { CourseCatalog, CourseDetailsView, EnrollmentCourseGate } from "@/components/course-experience";
 import { AdminControlCenter, StudentLearningCenter } from "@/components/lms-widgets";
 import { OpportunityBoard } from "@/components/opportunity-board";
 import { categories, courses, dashboardModules, events, faqs, insights, jobs, portalCards, roleDashboards, supportTypes, teamMembers, testimonials } from "@/lib/data";
@@ -29,16 +30,7 @@ export function CoursesIndex() {
   return (
     <>
       <PageHero eyebrow="Courses" title="Career-ready learning paths for modern technology teams" text="Browse live cohorts, bootcamps, and self-paced LMS programs with assignments, attendance, recordings, certificates, and progress tracking." ctaHref="/courses/devsecai-bootcamp-2025/enroll" cta="Enroll in DevSecAI" />
-      <section className="container-page py-12">
-        <div className="mb-6 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[1fr_auto_auto]">
-          <div className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-3"><Search size={18} /><input className="w-full bg-transparent outline-none" placeholder="Search courses" /></div>
-          <ButtonLink href="/courses?level=beginner" variant="secondary"><Filter size={16} /> Beginner</ButtonLink>
-          <ButtonLink href="/courses?category=devsecops" variant="secondary">DevSecOps</ButtonLink>
-        </div>
-        <div className="grid gap-6 md:grid-cols-3">
-          {courses.map((course) => <CourseCard key={course.slug} course={course} />)}
-        </div>
-      </section>
+      <CourseCatalog />
     </>
   );
 }
@@ -58,68 +50,11 @@ export function CourseCard({ course }: { course: (typeof courses)[number] }) {
 }
 
 export function CourseDetails({ slug }: { slug: string }) {
-  const course = courses.find((item) => item.slug === slug) ?? courses[0];
-  return (
-    <>
-      <section className="bg-slate-50 py-12">
-        <div className="container-page grid gap-8 lg:grid-cols-[1fr_380px]">
-          <div>
-            <Badge>{course.category}</Badge>
-            <h1 className="mt-4 text-4xl font-black leading-tight md:text-6xl">{course.title}</h1>
-            <p className="mt-5 text-lg leading-8 text-slate-600">{course.summary}</p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <ButtonLink href={`/courses/${course.slug}/enroll`}>Enroll Now</ButtonLink>
-              <ButtonLink href="/student-dashboard" variant="secondary">Preview LMS</ButtonLink>
-            </div>
-          </div>
-          <Card className="overflow-hidden">
-            <Image src={course.image} alt={course.title} width={640} height={420} className="h-56 w-full object-cover" />
-            <div className="p-5">
-              <div className="flex items-end gap-2"><span className="text-3xl font-black text-brand-green">{formatCurrency(course.discountPrice)}</span><span className="pb-1 text-sm text-slate-400 line-through">{formatCurrency(course.price)}</span></div>
-              <div className="mt-5 grid gap-3 text-sm text-slate-700">
-                <span className="flex items-center gap-2"><Clock size={17} /> {course.duration}</span>
-                <span className="flex items-center gap-2"><CheckCircle2 size={17} /> {course.level}</span>
-                <span className="flex items-center gap-2"><ShieldCheck size={17} /> Certificate included</span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </section>
-      <section className="container-page grid gap-8 py-12 lg:grid-cols-3">
-        <Card className="p-6 lg:col-span-2">
-          <h2 className="text-2xl font-bold">Curriculum</h2>
-          <div className="mt-5 grid gap-3">
-            {course.modules.map((module, index) => (
-              <div key={module} className="rounded-md border border-slate-200 p-4"><span className="text-sm font-semibold text-brand-red">Module {index + 1}</span><h3 className="font-bold">{module}</h3><p className="mt-1 text-sm text-slate-600">Lessons, resources, recordings, quizzes, assignments, and attendance tracking.</p></div>
-            ))}
-          </div>
-        </Card>
-        <Card className="p-6">
-          <h2 className="text-2xl font-bold">Outcomes</h2>
-          <div className="mt-5 grid gap-3">
-            {course.outcomes.map((outcome) => <p key={outcome} className="flex gap-2 text-sm text-slate-700"><CheckCircle2 className="mt-0.5 shrink-0 text-brand-green" size={17} /> {outcome}</p>)}
-          </div>
-        </Card>
-      </section>
-    </>
-  );
+  return <CourseDetailsView slug={slug} />;
 }
 
 export function EnrollmentPage({ slug }: { slug: string }) {
-  const course = courses.find((item) => item.slug === slug) ?? courses[0];
-  return (
-    <section className="container-page grid gap-8 py-12 lg:grid-cols-[1fr_420px]">
-      <div>
-        <Badge>Enrollment</Badge>
-        <h1 className="mt-4 text-4xl font-black">Enroll in {course.title}</h1>
-        <p className="mt-4 text-slate-600">Login or create an account first. Enrollment is attached to that same email. Send the course fee to the AtechSkills Meezan Bank account, upload payment proof, and admin will verify it before activating your course dashboard.</p>
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          {["Same-account enrollment", "Meezan Bank proof upload", "Admin payment verification", "Dashboard course activation"].map((item) => <Card key={item} className="p-5"><CheckCircle2 className="text-brand-green" /><h3 className="mt-3 font-bold">{item}</h3></Card>)}
-        </div>
-      </div>
-      <EnrollmentRequestForm slug={course.slug} courseTitle={course.title} />
-    </section>
-  );
+  return <EnrollmentCourseGate slug={slug} />;
 }
 
 export function EventsIndex() {

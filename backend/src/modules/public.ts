@@ -33,8 +33,24 @@ const enrollmentRequestSchema = z.object({
 });
 
 publicRouter.get("/health", (_req, res) => res.json({ status: "ok", service: "atechskills-api" }));
-publicRouter.get("/courses", asyncRoute(async (_req, res) => res.json(await prisma.course.findMany({ include: { category: true, instructor: true }, orderBy: { createdAt: "desc" } }))));
-publicRouter.get("/courses/:slug", asyncRoute(async (req, res) => res.json(await prisma.course.findUnique({ where: { slug: String(req.params.slug) }, include: { sections: { include: { lessons: true } }, category: true, instructor: true } }))));
+publicRouter.get("/courses", asyncRoute(async (_req, res) => res.json(await prisma.course.findMany({
+  where: { status: "PUBLISHED" },
+  include: { category: true, instructor: { include: { user: true } }, sections: { include: { lessons: true }, orderBy: { position: "asc" } } },
+  orderBy: { createdAt: "desc" }
+}))));
+publicRouter.get("/courses/:slug", asyncRoute(async (req, res) => {
+  const course = await prisma.course.findFirst({
+    where: { slug: String(req.params.slug), status: "PUBLISHED" },
+    include: {
+      sections: { include: { lessons: { orderBy: { position: "asc" } } }, orderBy: { position: "asc" } },
+      category: true,
+      instructor: { include: { user: true } },
+      sessions: { where: { status: { in: ["SCHEDULED", "LIVE"] } }, orderBy: { startsAt: "asc" } }
+    }
+  });
+  if (!course) return res.status(404).json({ error: "Course not found" });
+  res.json(course);
+}));
 publicRouter.post("/courses/:slug/enroll", validate(enrollmentRequestSchema), asyncRoute(async (req, res) => {
   const course = await withDbRetry(() => prisma.course.findUnique({ where: { slug: String(req.params.slug) } }), 3);
   if (!course) return res.status(404).json({ error: "Course not found" });

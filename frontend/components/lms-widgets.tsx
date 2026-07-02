@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BriefcaseBusiness, CheckCircle2, Clock, ExternalLink, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
+import { BookOpenCheck, BriefcaseBusiness, CheckCircle2, Clock, ExternalLink, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
@@ -119,12 +119,217 @@ export function StudentLearningCenter() {
 export function AdminControlCenter() {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-2">
+      <AdminCourseManager />
       <AdminStaffForm />
       <AdminOpportunityManager />
       <AdminScheduleForm />
       <AdminEnrollmentQueue />
       <AdminPerformancePanel />
     </div>
+  );
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function lines(value: FormDataEntryValue | null) {
+  return String(value ?? "").split("\n").map((item) => item.trim()).filter(Boolean);
+}
+
+function AdminCourseManager() {
+  const [courses, setCourses] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [courseResponse, teacherResponse] = await Promise.all([
+        fetch(`${apiBase}/lms/admin/courses`, { headers: authHeaders() }),
+        fetch(`${apiBase}/lms/admin/teachers`, { headers: authHeaders() })
+      ]);
+      const courseData = await courseResponse.json();
+      const teacherData = await teacherResponse.json();
+      if (!courseResponse.ok) throw new Error(courseData.error ?? "Unable to load courses");
+      if (!teacherResponse.ok) throw new Error(teacherData.error ?? "Unable to load teachers");
+      setCourses(Array.isArray(courseData) ? courseData : []);
+      setTeachers(Array.isArray(teacherData) ? teacherData : []);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load course manager");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const raw = new FormData(form);
+    const title = String(raw.get("title") ?? "");
+    const moduleTitles = lines(raw.get("sections"));
+    const lessonTitles = lines(raw.get("lessons"));
+    const sections = moduleTitles.length > 0
+      ? moduleTitles.map((sectionTitle, index) => ({
+          title: sectionTitle,
+          lessons: (lessonTitles[index] ? [lessonTitles[index]] : lessonTitles.length === 0 ? [] : []).map((lessonTitle) => ({ title: lessonTitle }))
+        }))
+      : [];
+    const payload = {
+      title,
+      slug: slugify(String(raw.get("slug") || title)),
+      summary: String(raw.get("summary") ?? ""),
+      description: String(raw.get("description") ?? ""),
+      thumbnailUrl: String(raw.get("thumbnailUrl") ?? ""),
+      price: Number(raw.get("price") || 0),
+      discountPrice: raw.get("discountPrice") ? Number(raw.get("discountPrice")) : undefined,
+      level: String(raw.get("level") || "Beginner"),
+      duration: String(raw.get("duration") || "8 weeks"),
+      isFree: raw.get("isFree") === "on",
+      classStartAt: raw.get("classStartAt") ? new Date(String(raw.get("classStartAt"))).toISOString() : undefined,
+      scheduleText: String(raw.get("scheduleText") ?? ""),
+      seatCapacity: raw.get("seatCapacity") ? Number(raw.get("seatCapacity")) : undefined,
+      prerequisites: lines(raw.get("prerequisites")),
+      outcomes: lines(raw.get("outcomes")),
+      status: raw.get("status") === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
+      instructorId: String(raw.get("instructorId") ?? ""),
+      sections
+    };
+    try {
+      const response = await fetch(`${apiBase}/lms/courses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to create course");
+      setMessage(`Created course: ${data.title}`);
+      form.reset();
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create course");
+    }
+  }
+
+  async function publish(id: string) {
+    try {
+      const response = await fetch(`${apiBase}/lms/courses/${id}/publish`, { method: "PATCH", headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to publish course");
+      setMessage(`Published: ${data.title}`);
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to publish course");
+    }
+  }
+
+  async function archive(id: string) {
+    try {
+      const response = await fetch(`${apiBase}/lms/courses/${id}`, { method: "DELETE", headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to archive course");
+      setMessage(`Archived: ${data.title}`);
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to archive course");
+    }
+  }
+
+  async function assignTeacher(courseId: string, teacherId: string) {
+    if (!teacherId) return;
+    try {
+      const response = await fetch(`${apiBase}/lms/courses/${courseId}/assign-teacher`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ teacherId })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to assign teacher");
+      setMessage(`Assigned teacher to ${data.title}`);
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to assign teacher");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <Card className="p-6 xl:col-span-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-bold"><BookOpenCheck className="text-brand-green" /> Course Management</h2>
+          <p className="mt-1 text-sm text-slate-600">Create course details, publish courses, and assign teachers. Public course pages only show published database courses.</p>
+        </div>
+        <button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+      </div>
+      <form onSubmit={submit} className="mt-5 grid gap-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <input required name="title" placeholder="Course title" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="slug" placeholder="Optional URL slug" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <textarea required name="summary" rows={2} placeholder="Short course summary" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <textarea name="description" rows={3} placeholder="Full course description" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <input name="thumbnailUrl" type="url" placeholder="Thumbnail image URL" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <div className="grid gap-3 md:grid-cols-4">
+          <input required name="price" type="number" min="0" step="0.01" placeholder="Price" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="discountPrice" type="number" min="0" step="0.01" placeholder="Discount price" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="level" placeholder="Beginner / Advanced" defaultValue="Beginner" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="duration" placeholder="8 weeks" defaultValue="8 weeks" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <input name="classStartAt" type="datetime-local" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="seatCapacity" type="number" min="1" placeholder="Seat capacity" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <select name="instructorId" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="">Assign teacher later</option>
+            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user.name} - {teacher.user.email}</option>)}
+          </select>
+        </div>
+        <textarea name="scheduleText" rows={2} placeholder="Schedule text, e.g. Saturdays 8 PM PKT" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <div className="grid gap-3 md:grid-cols-2">
+          <textarea name="prerequisites" rows={4} placeholder="Prerequisites, one per line" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <textarea name="outcomes" rows={4} placeholder="Learning outcomes, one per line" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <textarea name="sections" rows={4} placeholder="Module/section titles, one per line" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <textarea name="lessons" rows={4} placeholder="Optional lesson title for each module, one per line" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-700"><input name="isFree" type="checkbox" /> Free course/workshop</label>
+          <select name="status" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="DRAFT">Save as draft</option>
+            <option value="PUBLISHED">Publish immediately</option>
+          </select>
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Course</button>
+        </div>
+      </form>
+      {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      <div className="mt-6 grid gap-3">
+        {loading && <p className="text-sm text-slate-500">Loading courses...</p>}
+        {!loading && courses.length === 0 && <p className="text-sm text-slate-500">No courses created yet. Add the first course above.</p>}
+        {courses.map((course) => (
+          <div key={course.id} className="rounded-md border border-slate-200 p-4">
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div>
+                <h3 className="font-bold">{course.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{course.status} - {course.level} - Teacher: {course.instructor?.user?.name ?? "Not assigned"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select onChange={(event) => assignTeacher(course.id, event.target.value)} defaultValue="" className="rounded-md border border-slate-200 px-3 py-2 text-sm">
+                  <option value="">Assign teacher</option>
+                  {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user.name}</option>)}
+                </select>
+                {course.status !== "PUBLISHED" && <button onClick={() => publish(course.id)} className="rounded-md bg-brand-green px-3 py-2 text-xs font-bold text-white">Publish</button>}
+                <button onClick={() => archive(course.id)} className="rounded-md bg-brand-red px-3 py-2 text-xs font-bold text-white">Archive</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -312,7 +517,7 @@ function AdminScheduleForm() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/courses`).then((response) => response.json()).then(setCourses).catch(() => setCourses([]));
+    fetch(`${apiBase}/lms/admin/courses`, { headers: authHeaders() }).then((response) => response.json()).then(setCourses).catch(() => setCourses([]));
   }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
