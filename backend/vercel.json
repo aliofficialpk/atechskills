@@ -75,6 +75,12 @@
     "api/v1/admin/teachers.ts": {
       "maxDuration": 60
     },
+    "api/v1/admin-courses.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/admin-teachers.ts": {
+      "maxDuration": 60
+    },
     "api/v1/courses.ts": {
       "maxDuration": 60
     },
