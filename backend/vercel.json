@@ -93,13 +93,13 @@
     "api/v1/lms/courses/[id]/publish.ts": {
       "maxDuration": 60
     },
-    "api/v1/lms/courses/[slug]/enroll.ts": {
-      "maxDuration": 60
-    },
     "api/v1/lms/admin/courses.ts": {
       "maxDuration": 60
     },
     "api/v1/lms/admin/teachers.ts": {
+      "maxDuration": 60
+    },
+    "api/v1/lms/enrollments/[slug].ts": {
       "maxDuration": 60
     }
   }

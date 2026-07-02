@@ -364,7 +364,7 @@ lmsRouter.delete("/courses/:id", requireRole("Super Admin", "Admin"), asyncRoute
   res.json(course);
 }));
 
-lmsRouter.post("/courses/:slug/enroll", upload.single("paymentProof"), asyncRoute(async (req, res) => {
+const courseEnrollmentHandler = asyncRoute(async (req, res) => {
   const course = await withDbRetry(() => prisma.course.findUnique({ where: { slug: String(req.params.slug) } }), 3);
   if (!course) return res.status(404).json({ error: "Course not found" });
 
@@ -412,7 +412,10 @@ lmsRouter.post("/courses/:slug/enroll", upload.single("paymentProof"), asyncRout
     bank: { name: "Bank Alfalah", accountTitle: "ATechSkills", accountNumber: "55105002806178" },
     enrollment
   });
-}));
+});
+
+lmsRouter.post("/courses/:slug/enroll", upload.single("paymentProof"), courseEnrollmentHandler);
+lmsRouter.post("/enrollments/:slug", upload.single("paymentProof"), courseEnrollmentHandler);
 
 lmsRouter.get("/admin/enrollment-requests", requireRole("Super Admin", "Admin"), asyncRoute(async (_req, res) => {
   const enrollments = await prisma.enrollment.findMany({

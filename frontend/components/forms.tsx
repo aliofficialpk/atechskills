@@ -213,7 +213,7 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
     setStatus("loading");
     setMessage("");
     try {
-      const response = await fetch(`${apiBase}/lms/courses/${slug}/enroll`, {
+      const response = await fetch(`${apiBase}/lms/enrollments/${slug}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: values
