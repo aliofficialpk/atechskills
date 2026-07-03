@@ -1,5 +1,8 @@
 import { EventRegistrationForm } from "@/components/forms";
 import { PageHero } from "@/components/page-sections";
+import { createMetadata } from "@/lib/seo";
+
+export const metadata = createMetadata({ title: "Event Registration", description: "Register for AtechSkills technology events, workshops, summits, seminars, and live learning sessions.", path: "/events" });
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

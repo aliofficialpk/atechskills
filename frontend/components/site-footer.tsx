@@ -33,7 +33,7 @@ export function SiteFooter() {
           </div>
         </div>
       </div>
-      <div className="border-t border-white/10 py-5 text-center text-sm text-emerald-50">© 2026 AtechSkills. All rights reserved.</div>
+      <div className="border-t border-white/10 py-5 text-center text-sm text-emerald-50">&copy; 2026 AtechSkills. All rights reserved.</div>
     </footer>
   );
 }

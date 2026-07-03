@@ -11,6 +11,8 @@ const normalizeOrigin = (origin: string) => origin.replace(/\/$/, "");
 const allowedOrigins = new Set([
   normalizeOrigin(env.FRONTEND_URL),
   "https://atechskills.vercel.app",
+  "https://atechskills.com",
+  "https://www.atechskills.com",
   "http://localhost:8000"
 ]);
 

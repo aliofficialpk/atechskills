@@ -10,6 +10,6 @@ export function formatCurrency(value: number) {
 }
 
 export function absoluteUrl(path = "") {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:8000";
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://atechskills.com";
   return `${base}${path}`;
 }

@@ -22,7 +22,7 @@ Create `backend/.env` locally and add the same variables in the Vercel backend p
 NODE_ENV=production
 PORT=9000
 API_PREFIX=/api/v1
-FRONTEND_URL=https://your-frontend-domain.vercel.app
+FRONTEND_URL=https://atechskills.com
 DATABASE_URL=
 JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
@@ -59,3 +59,4 @@ Deploy this folder as its own Vercel project with **Root Directory** set to `bac
 - Configure Cloudinary for images and file thumbnails.
 - Configure Google Drive variables for recording storage.
 - Run `npm run prisma:generate` and `npm exec prisma db push` before first production use if the database is empty.
+- Add both `https://atechskills.com` and `https://www.atechskills.com` as allowed frontend origins when using a custom backend domain or proxy.
