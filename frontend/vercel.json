@@ -4,6 +4,7 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "env": {
-    "NEXT_PUBLIC_APP_URL": "https://atechskills.com"
+    "NEXT_PUBLIC_APP_URL": "https://atechskills.com",
+    "NEXT_PUBLIC_CANONICAL_URL": "https://atechskills.com"
   }
 }

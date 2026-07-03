@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const siteConfig = {
   name: "AtechSkills",
   domain: "atechskills.com",
-  url: process.env.NEXT_PUBLIC_APP_URL ?? "https://atechskills.com",
+  url: process.env.NEXT_PUBLIC_CANONICAL_URL ?? "https://atechskills.com",
   description:
     "AtechSkills delivers practical technology courses, cybersecurity training, DevSecOps, AI, cloud computing, live bootcamps, internships, events, and LMS-based career development.",
   logo: "/images/atechskills-logo.jpeg",

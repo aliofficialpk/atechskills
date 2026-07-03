@@ -17,6 +17,7 @@ Create `frontend/.env.local` locally and add the same variables in the Vercel fr
 
 ```env
 NEXT_PUBLIC_APP_URL=https://atechskills.com
+NEXT_PUBLIC_CANONICAL_URL=https://atechskills.com
 NEXT_PUBLIC_API_URL=https://your-backend-domain.vercel.app/api/v1
 NEXT_PUBLIC_SITE_NAME=AtechSkills
 ```
@@ -57,6 +58,7 @@ Use these settings when replacing the old Hostinger site with this Vercel fronte
    - Value: `cname.vercel-dns.com`
 7. In the Vercel frontend environment variables, set:
    - `NEXT_PUBLIC_APP_URL=https://atechskills.com`
+   - `NEXT_PUBLIC_CANONICAL_URL=https://atechskills.com`
    - `NEXT_PUBLIC_API_URL=https://apiatechskills.vercel.app/api/v1` or your final backend API domain
 8. Redeploy the frontend after updating DNS/environment variables.
 
