@@ -25,6 +25,15 @@ const rolePermissions: Record<string, string[]> = {
   Student: []
 };
 
+const courseCategories = [
+  { name: "Cybersecurity", slug: "cybersecurity" },
+  { name: "DevSecOps", slug: "devsecops" },
+  { name: "AI & Machine Learning", slug: "ai-machine-learning" },
+  { name: "Cloud Computing", slug: "cloud-computing" },
+  { name: "Programming", slug: "programming" },
+  { name: "Data Science", slug: "data-science" }
+];
+
 async function main() {
   for (const name of permissions) {
     await prisma.permission.upsert({ where: { name }, update: {}, create: { name } });
@@ -57,6 +66,14 @@ async function main() {
 
   const superAdminRoleId = roles.get("Super Admin");
   if (!superAdminRoleId) throw new Error("Super Admin role was not created");
+
+  for (const category of courseCategories) {
+    await prisma.category.upsert({
+      where: { slug: category.slug },
+      update: { name: category.name, type: "course" },
+      create: { ...category, type: "course" }
+    });
+  }
 
   const passwordHash = await bcrypt.hash("admin234", 12);
   const admin = await prisma.user.upsert({

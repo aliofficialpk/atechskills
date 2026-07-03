@@ -1,7 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
 
 export async function uploadBufferToCloudinary(file: Express.Multer.File, folder: string) {
-  if (!process.env.CLOUDINARY_CLOUD_NAME) {
+  if (!process.env.CLOUDINARY_CLOUD_NAME && !process.env.CLOUDINARY_URL) {
     return {
       url: `local-pending://${encodeURIComponent(file.originalname)}`,
       publicId: `local/${Date.now()}-${file.originalname}`

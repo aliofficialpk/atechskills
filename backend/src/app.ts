@@ -3,7 +3,7 @@ import morgan from "morgan";
 import { env } from "./config.js";
 import { applySecurity } from "./middleware/security.js";
 import { adminRouter } from "./modules/admin.js";
-import { adminCoursesAliasRouter, adminTeachersAliasRouter } from "./modules/admin-course-alias.js";
+import { adminCategoriesAliasRouter, adminCoursesAliasRouter, adminEnrollmentsAliasRouter, adminTeachersAliasRouter } from "./modules/admin-course-alias.js";
 import { authRouter } from "./modules/auth.js";
 import { lmsRouter } from "./modules/lms.js";
 import { publicRouter } from "./modules/public.js";
@@ -26,6 +26,8 @@ export function createApp() {
     app.use(`${prefix}/admin`, adminRouter);
     app.use(`${prefix}/admin-courses`, adminCoursesAliasRouter);
     app.use(`${prefix}/admin-teachers`, adminTeachersAliasRouter);
+    app.use(`${prefix}/admin-categories`, adminCategoriesAliasRouter);
+    app.use(`${prefix}/admin-enrollments`, adminEnrollmentsAliasRouter);
     app.use(`${prefix}/uploads`, uploadsRouter);
   }
 

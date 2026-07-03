@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { BookOpenCheck, BriefcaseBusiness, CheckCircle2, Clock, ExternalLink, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
+import { categories as fallbackCategories } from "@/lib/data";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
 
@@ -20,6 +21,8 @@ type ApiState<T> = {
 function asArray<T = any>(value: unknown): T[] {
   return Array.isArray(value) ? value : [];
 }
+
+const fallbackCourseCategories = fallbackCategories.map((category) => ({ id: "", name: category.name, slug: category.slug }));
 
 export function StudentLearningCenter() {
   const [state, setState] = useState<ApiState<any>>({ loading: true });
@@ -124,6 +127,8 @@ export function AdminControlCenter() {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-2">
       <AdminCourseManager />
+      <AdminCategoryManager onSaved={() => window.dispatchEvent(new Event("atechskills:categories-updated"))} />
+      <AdminMentorManager />
       <AdminStaffForm />
       <AdminOpportunityManager />
       <AdminScheduleForm />
@@ -144,23 +149,29 @@ function lines(value: FormDataEntryValue | null) {
 function AdminCourseManager() {
   const [courses, setCourses] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
     try {
-      const [courseResponse, teacherResponse] = await Promise.all([
+      const [courseResponse, teacherResponse, categoryResponse] = await Promise.all([
         fetch(`${apiBase}/admin-courses`, { headers: authHeaders() }),
-        fetch(`${apiBase}/admin-teachers`, { headers: authHeaders() })
+        fetch(`${apiBase}/admin-teachers`, { headers: authHeaders() }),
+        fetch(`${apiBase}/admin-categories`, { headers: authHeaders() })
       ]);
       const courseData = await courseResponse.json();
       const teacherData = await teacherResponse.json();
+      const categoryData = await categoryResponse.json();
       if (!courseResponse.ok) throw new Error(courseData.error ?? "Unable to load courses");
       if (!teacherResponse.ok) throw new Error(teacherData.error ?? "Unable to load teachers");
+      if (!categoryResponse.ok) throw new Error(categoryData.error ?? "Unable to load categories");
       setCourses(Array.isArray(courseData) ? courseData : []);
       setTeachers(Array.isArray(teacherData) ? teacherData : []);
+      setCategories(Array.isArray(categoryData) && categoryData.length > 0 ? categoryData : fallbackCourseCategories);
     } catch (error) {
+      setCategories(fallbackCourseCategories);
       setMessage(error instanceof Error ? error.message : "Unable to load course manager");
     } finally {
       setLoading(false);
@@ -180,31 +191,32 @@ function AdminCourseManager() {
           lessons: (lessonTitles[index] ? [lessonTitles[index]] : lessonTitles.length === 0 ? [] : []).map((lessonTitle) => ({ title: lessonTitle }))
         }))
       : [];
-    const payload = {
-      title,
-      slug: slugify(String(raw.get("slug") || title)),
-      summary: String(raw.get("summary") ?? ""),
-      description: String(raw.get("description") ?? ""),
-      thumbnailUrl: String(raw.get("thumbnailUrl") ?? ""),
-      price: Number(raw.get("price") || 0),
-      discountPrice: raw.get("discountPrice") ? Number(raw.get("discountPrice")) : undefined,
-      level: String(raw.get("level") || "Beginner"),
-      duration: String(raw.get("duration") || "8 weeks"),
-      isFree: raw.get("isFree") === "on",
-      classStartAt: raw.get("classStartAt") ? new Date(String(raw.get("classStartAt"))).toISOString() : undefined,
-      scheduleText: String(raw.get("scheduleText") ?? ""),
-      seatCapacity: raw.get("seatCapacity") ? Number(raw.get("seatCapacity")) : undefined,
-      prerequisites: lines(raw.get("prerequisites")),
-      outcomes: lines(raw.get("outcomes")),
-      status: raw.get("status") === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
-      instructorId: String(raw.get("instructorId") ?? ""),
-      sections
-    };
+    const payload = new FormData();
+    payload.set("title", title);
+    payload.set("slug", slugify(String(raw.get("slug") || title)));
+    payload.set("summary", String(raw.get("summary") ?? ""));
+    payload.set("description", String(raw.get("description") ?? ""));
+    payload.set("price", String(raw.get("price") || 0));
+    if (raw.get("discountPrice")) payload.set("discountPrice", String(raw.get("discountPrice")));
+    payload.set("level", String(raw.get("level") || "Beginner"));
+    payload.set("duration", String(raw.get("duration") || "8 weeks"));
+    payload.set("isFree", raw.get("isFree") === "on" ? "true" : "false");
+    if (raw.get("classStartAt")) payload.set("classStartAt", new Date(String(raw.get("classStartAt"))).toISOString());
+    payload.set("scheduleText", String(raw.get("scheduleText") ?? ""));
+    if (raw.get("seatCapacity")) payload.set("seatCapacity", String(raw.get("seatCapacity")));
+    payload.set("prerequisites", JSON.stringify(lines(raw.get("prerequisites"))));
+    payload.set("outcomes", JSON.stringify(lines(raw.get("outcomes"))));
+    payload.set("status", raw.get("status") === "PUBLISHED" ? "PUBLISHED" : "DRAFT");
+    payload.set("categoryId", String(raw.get("categoryId") ?? ""));
+    payload.set("instructorId", String(raw.get("instructorId") ?? ""));
+    payload.set("sections", JSON.stringify(sections));
+    const thumbnail = raw.get("thumbnail");
+    if (thumbnail instanceof File && thumbnail.size > 0) payload.set("thumbnail", thumbnail);
     try {
       const response = await fetch(`${apiBase}/admin-courses`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: payload
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to create course");
@@ -259,6 +271,9 @@ function AdminCourseManager() {
 
   useEffect(() => {
     load();
+    const reload = () => load();
+    window.addEventListener("atechskills:categories-updated", reload);
+    return () => window.removeEventListener("atechskills:categories-updated", reload);
   }, []);
 
   return (
@@ -277,7 +292,10 @@ function AdminCourseManager() {
         </div>
         <textarea required name="summary" rows={2} placeholder="Short course summary" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
         <textarea name="description" rows={3} placeholder="Full course description" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <input name="thumbnailUrl" type="url" placeholder="Thumbnail image URL" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Course thumbnail
+          <input name="thumbnail" type="file" accept="image/png,image/jpeg,image/webp" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </label>
         <div className="grid gap-3 md:grid-cols-4">
           <input required name="price" type="number" min="0" step="0.01" placeholder="Price" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
           <input name="discountPrice" type="number" min="0" step="0.01" placeholder="Discount price" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
@@ -291,6 +309,13 @@ function AdminCourseManager() {
             <option value="">Assign teacher later</option>
             {asArray(teachers).map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.user?.name ?? "Teacher"} - {teacher.user?.email ?? "No email"}</option>)}
           </select>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <select name="categoryId" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="">Select category</option>
+            {asArray(categories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </select>
+          <ButtonLink href="#course-categories" variant="secondary">Manage Categories</ButtonLink>
         </div>
         <textarea name="scheduleText" rows={2} placeholder="Schedule text, e.g. Saturdays 8 PM PKT" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
         <div className="grid gap-3 md:grid-cols-2">
@@ -333,6 +358,83 @@ function AdminCourseManager() {
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+function AdminCategoryManager({ onSaved }: { onSaved: () => void }) {
+  const [message, setMessage] = useState("");
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    try {
+      const response = await fetch(`${apiBase}/admin-categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ name: raw.name, slug: raw.slug || undefined })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to save category");
+      setMessage(`Saved category: ${data.name}`);
+      form.reset();
+      onSaved();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save category");
+    }
+  }
+
+  return (
+    <div id="course-categories">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold">Course Categories</h2>
+        <form onSubmit={submit} className="mt-5 grid gap-3">
+          <input required name="name" placeholder="Category name, e.g. Cybersecurity" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="slug" placeholder="Optional slug" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Category</button>
+        </form>
+        {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      </Card>
+    </div>
+  );
+}
+
+function AdminMentorManager() {
+  const [message, setMessage] = useState("");
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    try {
+      const response = await fetch(`${apiBase}/admin-teachers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to create mentor");
+      setMessage(`Created instructor profile for ${data.name ?? data.email}`);
+      form.reset();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to create mentor");
+    }
+  }
+
+  return (
+    <Card className="p-6">
+      <h2 className="flex items-center gap-2 text-xl font-bold"><UserPlus className="text-brand-green" /> Mentors and Instructors</h2>
+      <p className="mt-2 text-sm text-slate-600">Create instructor credentials, then assign the instructor from the course form.</p>
+      <form onSubmit={submit} className="mt-5 grid gap-3">
+        <input required name="name" placeholder="Instructor name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <input required name="email" type="email" placeholder="Instructor email" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <input required name="password" type="password" minLength={8} placeholder="Temporary password" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <input name="title" placeholder="Designation, e.g. Senior Security Mentor" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <textarea name="bio" rows={3} placeholder="Instructor bio" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Instructor</button>
+      </form>
+      {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
     </Card>
   );
 }
@@ -587,7 +689,7 @@ function AdminEnrollmentQueue() {
   async function load() {
     setState({ loading: true });
     try {
-      const response = await fetch(`${apiBase}/lms/admin/enrollment-requests`, { headers: authHeaders() });
+      const response = await fetch(`${apiBase}/admin-enrollments`, { headers: authHeaders() });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load requests");
       setState({ loading: false, data });
@@ -598,8 +700,11 @@ function AdminEnrollmentQueue() {
 
   async function review(id: string, action: "verify" | "reject") {
     try {
-      const endpoint = action === "verify" ? "approve-payment" : "reject";
-      const response = await fetch(`${apiBase}/lms/admin/enrollments/${id}/${endpoint}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ adminNote: action === "verify" ? "Payment approved." : "Please upload a clearer proof." }) });
+      const response = await fetch(`${apiBase}/admin-enrollments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ enrollmentId: id, action: action === "verify" ? "APPROVE" : "REJECT", adminNote: action === "verify" ? "Payment approved." : "Please upload a clearer proof." })
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to review enrollment");
       load();
