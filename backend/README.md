@@ -23,11 +23,14 @@ NODE_ENV=production
 PORT=9000
 API_PREFIX=/api/v1
 FRONTEND_URL=https://atechskills.com
+BACKEND_URL=https://apiatechskills.vercel.app
 DATABASE_URL=
 JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
 ACCESS_TOKEN_TTL=15m
 REFRESH_TOKEN_TTL=30d
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
@@ -58,5 +61,9 @@ Deploy this folder as its own Vercel project with **Root Directory** set to `bac
 - Set long random JWT secrets.
 - Configure Cloudinary for images and file thumbnails.
 - Configure Google Drive variables for recording storage.
+- Configure Google OAuth for student login:
+  - Authorized JavaScript origins: `https://atechskills.com`, `https://www.atechskills.com`, and `http://localhost:8000` for local testing.
+  - Authorized redirect URIs: `https://apiatechskills.vercel.app/api/v1/auth/google/callback` and `http://localhost:9000/api/v1/auth/google/callback` for local testing.
+  - Put the OAuth web client values in `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Run `npm run prisma:generate` and `npm exec prisma db push` before first production use if the database is empty.
 - Add both `https://atechskills.com` and `https://www.atechskills.com` as allowed frontend origins when using a custom backend domain or proxy.

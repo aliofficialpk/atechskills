@@ -110,9 +110,26 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
     }
   }
 
+  function startGoogleLogin() {
+    window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent("/student-dashboard")}`;
+  }
+
   return (
     <form onSubmit={onSubmit} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
       <h2 className="text-xl font-bold text-slate-950">{isLogin ? "Welcome back" : isRegister ? "Start learning" : "Recover access"}</h2>
+      {!isRecovery && (
+        <>
+          <button type="button" onClick={startGoogleLogin} className="inline-flex min-h-11 items-center justify-center gap-3 rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-brand-green hover:bg-emerald-50">
+            <span className="grid size-5 place-items-center rounded-full bg-white text-base font-black text-brand-red shadow-sm">G</span>
+            Continue with Google
+          </button>
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            or
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+        </>
+      )}
       {isRegister && (
         <label className="grid gap-2 text-sm font-medium text-slate-700">
           Full name
