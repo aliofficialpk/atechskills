@@ -5,7 +5,7 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(9000),
   API_PREFIX: z.string().default("/api/v1"),
-  FRONTEND_URL: z.string().url().default("http://localhost:8000"),
+  FRONTEND_URL: z.string().url().default("https://www.atechskills.com"),
   BACKEND_URL: z.string().url().default("http://localhost:9000"),
   DATABASE_URL: z.string().optional(),
   JWT_ACCESS_SECRET: z.string().default("dev-access-secret-change-me"),
