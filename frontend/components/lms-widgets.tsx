@@ -216,7 +216,7 @@ export function StudentPortalDashboard() {
 
               {activeTab === "courses" && <StudentCoursesPanel enrollments={metrics.enrollments} reload={load} />}
               {activeTab === "attendance" && <StudentAttendancePanel attendance={metrics.attendance} sessions={metrics.sessions} />}
-              {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} reload={load} />}
+              {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} activeEnrollments={metrics.activeEnrollments} reload={load} />}
               {activeTab === "live" && <StudentLivePanel sessions={metrics.sessions} sessionId={sessionId} setSessionId={setSessionId} liveAction={liveAction} message={liveMessage} />}
               {activeTab === "recordings" && <StudentRecordingsPanel recordings={metrics.recordings} />}
               {activeTab === "certificates" && <StudentCertificatesPanel certificates={metrics.certificates} />}
@@ -291,11 +291,11 @@ function StudentAttendancePanel({ attendance, sessions }: { attendance: any[]; s
   );
 }
 
-function StudentAssignmentsPanel({ assignments, reload }: { assignments: any[]; reload: () => void }) {
+function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { assignments: any[]; activeEnrollments: any[]; reload: () => void }) {
   const [message, setMessage] = useState("");
   const [uploadingId, setUploadingId] = useState("");
 
-  async function submitAssignment(event: React.FormEvent<HTMLFormElement>, assignmentId: string) {
+  async function submitAssignment(event: React.FormEvent<HTMLFormElement>, targetId: string, mode: "assignment" | "course" = "assignment") {
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
@@ -304,10 +304,11 @@ function StudentAssignmentsPanel({ assignments, reload }: { assignments: any[]; 
       setMessage("Please upload your assignment as a PDF file.");
       return;
     }
-    setUploadingId(assignmentId);
+    setUploadingId(`${mode}:${targetId}`);
     setMessage("");
     try {
-      const response = await authedFetch(`${apiBase}/lms/assignments/${assignmentId}/submit`, {
+      const path = mode === "course" ? `/lms/courses/${targetId}/submit-assignment` : `/lms/assignments/${targetId}/submit`;
+      const response = await authedFetch(`${apiBase}${path}`, {
         method: "POST",
         body: values
       });
@@ -326,10 +327,35 @@ function StudentAssignmentsPanel({ assignments, reload }: { assignments: any[]; 
   return (
     <Card className="mt-6 p-6">
       <h2 className="text-xl font-bold">Assignments</h2>
-      <p className="mt-2 text-sm text-slate-600">Upload your completed work as a PDF. Each submission is attached to your logged-in student account.</p>
+      <p className="mt-2 text-sm text-slate-600">Upload your completed work as a PDF. You can submit to a teacher-created assignment or upload general course work for any active enrolled course.</p>
       {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
       <div className="mt-5 grid gap-4">
-        {assignments.length === 0 && <p className="text-sm text-slate-500">No assignments have been added to your enrolled courses yet.</p>}
+        {activeEnrollments.length === 0 && <p className="text-sm text-slate-500">You need an active enrollment before uploading assignments.</p>}
+        {activeEnrollments.map((enrollment) => (
+          <div key={enrollment.id} className="rounded-md border border-emerald-200 bg-emerald-50/50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{enrollment.course?.title ?? "Course"} Upload</h3>
+                <p className="mt-1 text-sm text-slate-600">Use this when your teacher has not created a specific assignment yet, or when you need to submit course work directly.</p>
+              </div>
+              <Badge>Active Course</Badge>
+            </div>
+            <form onSubmit={(event) => submitAssignment(event, enrollment.courseId, "course")} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                PDF file
+                <input required type="file" name="file" accept="application/pdf" className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-green" />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Notes
+                <input name="answer" className="rounded-md border border-slate-200 bg-white px-3 py-3 outline-none focus:border-brand-green" placeholder="Optional message for your teacher" />
+              </label>
+              <button disabled={uploadingId === `course:${enrollment.courseId}`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                {uploadingId === `course:${enrollment.courseId}` ? "Uploading..." : "Upload Work"}
+              </button>
+            </form>
+          </div>
+        ))}
+        {assignments.length === 0 && activeEnrollments.length > 0 && <p className="text-sm text-slate-500">No teacher-created assignments yet. Use the course upload above.</p>}
         {assignments.map((item) => {
           const latestSubmission = asArray(item.submissions)[0];
           return (
@@ -356,8 +382,8 @@ function StudentAssignmentsPanel({ assignments, reload }: { assignments: any[]; 
                   Notes
                   <input name="answer" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" placeholder="Optional message for your teacher" />
                 </label>
-                <button disabled={uploadingId === item.id} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
-                  {uploadingId === item.id ? "Uploading..." : "Submit PDF"}
+                <button disabled={uploadingId === `assignment:${item.id}`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                  {uploadingId === `assignment:${item.id}` ? "Uploading..." : "Submit PDF"}
                 </button>
               </form>
             </div>

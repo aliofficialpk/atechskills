@@ -763,6 +763,40 @@ lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUplo
   res.status(201).json(submission);
 }));
 
+lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
+  const course = await prisma.course.findUnique({ where: { id: String(req.params.courseId) } });
+  if (!course) return res.status(404).json({ error: "Course not found" });
+  if (!req.file) return res.status(400).json({ error: "PDF assignment file is required." });
+
+  const student = await ensureStudentForUser(req.user!.id);
+  const enrollment = await prisma.enrollment.findUnique({ where: { studentId_courseId: { studentId: student.id, courseId: course.id } } });
+  if (!enrollment || enrollment.status !== "ACTIVE") return res.status(403).json({ error: "Active enrollment is required before submitting work for this course." });
+
+  const assignment = await prisma.assignment.findFirst({
+    where: { courseId: course.id, title: "General Course Submission" },
+    orderBy: { id: "asc" }
+  }) ?? await prisma.assignment.create({
+    data: {
+      courseId: course.id,
+      title: "General Course Submission",
+      description: "Student-uploaded work for this course.",
+      maxScore: 100
+    }
+  });
+
+  const uploadResult = await uploadBufferToCloudinary(req.file, "atechskills/assignment-submissions");
+  const submission = await prisma.submission.create({
+    data: {
+      assignmentId: assignment.id,
+      userId: req.user!.id,
+      fileUrl: uploadResult.url,
+      answer: req.body.answer ? String(req.body.answer) : undefined
+    },
+    include: { assignment: { include: { course: true } }, user: true }
+  });
+  res.status(201).json(submission);
+}));
+
 lmsRouter.patch("/submissions/:id/grade", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
   const submission = await prisma.submission.findUnique({ where: { id: String(req.params.id) }, include: { assignment: true } });
   if (!submission) return res.status(404).json({ error: "Submission not found" });
