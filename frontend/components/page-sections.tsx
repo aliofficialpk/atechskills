@@ -1,13 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, CalendarDays, CheckCircle2, Clock, FileText, Filter, PlayCircle, Search, ShieldCheck, Ticket, UsersRound } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, Clock, Filter, PlayCircle, Search, ShieldCheck, Ticket, UsersRound } from "lucide-react";
 import { Badge, ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { CeoMessageSection } from "@/components/ceo-message";
 import { AuthForm, EnrollmentRequestForm, SmartForm } from "@/components/forms";
 import { CourseCatalog, CourseDetailsView, EnrollmentCourseGate } from "@/components/course-experience";
-import { AdminControlCenter, StudentPortalDashboard } from "@/components/lms-widgets";
+import { SecureRoleDashboard, StudentPortalDashboard } from "@/components/lms-widgets";
 import { OpportunityBoard } from "@/components/opportunity-board";
-import { categories, courses, dashboardModules, events, faqs, insights, jobs, portalCards, roleDashboards, supportTypes, teamMembers, testimonials } from "@/lib/data";
+import { categories, courses, events, faqs, insights, jobs, portalCards, supportTypes, teamMembers, testimonials } from "@/lib/data";
 import { formatCurrency } from "@/lib/utils";
 
 export function PageHero({ eyebrow, title, text, ctaHref = "/register", cta = "Get Started" }: { eyebrow: string; title: string; text: string; ctaHref?: string; cta?: string }) {
@@ -292,52 +292,9 @@ export function AuthPage({ mode }: { mode: "login" | "register" | "forgot-passwo
 }
 
 export function DashboardPage({ role }: { role: keyof typeof portalCards }) {
-  const labels = { student: "Student Dashboard", teacher: "Teacher Dashboard", admin: "Admin Dashboard", services: "Student Services Dashboard" };
-  const dashboard = roleDashboards[role];
   if (role === "student") return <StudentPortalDashboard />;
-  return (
-    <section className="min-h-screen bg-slate-50">
-      <div className="border-b border-slate-200 bg-white">
-        <div className="container-page flex min-h-20 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
-          <div><Badge>Portal</Badge><h1 className="mt-2 text-3xl font-black">{labels[role]}</h1></div>
-          <div className="flex flex-wrap gap-3"><ButtonLink href="/" variant="secondary">Website</ButtonLink><ButtonLink href="/notifications" variant="secondary">Notifications</ButtonLink><ButtonLink href="/login">Switch Role</ButtonLink></div>
-        </div>
-      </div>
-      <div className="container-page grid gap-6 py-8 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-card">
-          {portalCards[role].slice(0, 8).map((item) => <Link href={`#${item.toLowerCase().replaceAll(" ", "-").replaceAll("&", "and")}`} key={item} className="block rounded-md px-3 py-3 text-sm font-semibold hover:bg-brand-mint">{item}</Link>)}
-        </aside>
-        <div>
-          <div className="grid gap-4 md:grid-cols-4">
-            {dashboard.kpis.map((item) => <Card key={item.label} className="p-5"><p className="text-sm text-slate-500">{item.label}</p><p className="mt-2 text-3xl font-black text-brand-green">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.caption}</p></Card>)}
-          </div>
-          <div className="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-            <Card className="overflow-hidden">
-              <div className="border-b border-slate-200 p-5"><h2 className="text-xl font-bold">{dashboard.primaryTitle}</h2><p className="mt-1 text-sm text-slate-500">{dashboard.primaryText}</p></div>
-              <div className="divide-y divide-slate-100">
-                {dashboard.rows.map((row) => (
-                  <div key={row.title} className="grid gap-3 p-5 md:grid-cols-[1fr_auto] md:items-center">
-                    <div><h3 className="font-bold">{row.title}</h3><p className="mt-1 text-sm text-slate-600">{row.detail}</p></div>
-                    <span className="rounded-full bg-brand-mint px-3 py-1 text-xs font-bold text-brand-green">{row.status}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-            <Card className="p-5">
-              <h2 className="text-xl font-bold">{dashboard.secondaryTitle}</h2>
-              <div className="mt-4 grid gap-3">
-                {dashboard.actions.map((action) => <ButtonLink key={action.label} href={action.href} variant={action.primary ? "primary" : "secondary"} className="justify-between">{action.label}<ArrowRight size={16} /></ButtonLink>)}
-              </div>
-            </Card>
-          </div>
-          {role === "admin" && <AdminControlCenter />}
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {dashboardModules[role].map((item) => <Card key={item.title} className="p-6" ><div className="flex items-start justify-between gap-3"><div><FileText className="text-brand-green" /><h2 className="mt-4 text-xl font-bold">{item.title}</h2><p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p></div><ArrowRight className="text-slate-400" /></div></Card>)}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+  if (role === "admin" || role === "teacher" || role === "services") return <SecureRoleDashboard role={role} />;
+  return <StudentPortalDashboard />;
 }
 
 export function SupportTicketPage() {

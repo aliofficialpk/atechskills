@@ -242,6 +242,18 @@ adminTeachersAliasRouter.post("/", async (req, res, next) => {
   }
 });
 
+adminTeachersAliasRouter.delete("/:id", async (req, res, next) => {
+  try {
+    const teacher = await prisma.teacher.findUnique({ where: { id: String(req.params.id) }, include: { user: true } });
+    if (!teacher) return res.status(404).json({ error: "Teacher not found" });
+    await prisma.course.updateMany({ where: { instructorId: teacher.id }, data: { instructorId: null } });
+    const user = await prisma.user.update({ where: { id: teacher.userId }, data: { isActive: false } });
+    res.json({ id: teacher.id, userId: user.id, email: user.email, isActive: user.isActive });
+  } catch (error) {
+    next(error);
+  }
+});
+
 adminCategoriesAliasRouter.get("/", async (_req, res, next) => {
   try {
     res.json(await prisma.category.findMany({ where: { type: "course" }, orderBy: { name: "asc" } }));

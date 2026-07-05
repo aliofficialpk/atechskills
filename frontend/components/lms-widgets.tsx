@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Award, Bell, BookOpenCheck, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock, ExternalLink, FileText, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
-import { categories as fallbackCategories } from "@/lib/data";
+import { categories as fallbackCategories, dashboardModules, portalCards, roleDashboards } from "@/lib/data";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
 
@@ -363,6 +363,177 @@ export function StudentLearningCenter() {
   );
 }
 
+type PortalRole = "admin" | "teacher" | "services";
+
+const roleAccess: Record<PortalRole, string[]> = {
+  admin: ["Super Admin", "Admin"],
+  teacher: ["Teacher"],
+  services: ["Student Services"]
+};
+
+const dashboardLabels: Record<PortalRole, string> = {
+  admin: "Admin Dashboard",
+  teacher: "Teacher Dashboard",
+  services: "Student Services Dashboard"
+};
+
+function getStoredUser() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("atechskills_user");
+    return raw ? JSON.parse(raw) as { name?: string; email?: string; roles?: string[] } : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasPortalAccess(role: PortalRole, user: { roles?: string[] } | null) {
+  const roles = user?.roles ?? [];
+  return roleAccess[role].some((allowedRole) => roles.includes(allowedRole));
+}
+
+function tabId(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export function SecureRoleDashboard({ role }: { role: PortalRole }) {
+  const tabs = role === "admin"
+    ? ["Overview", "Courses", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
+    : portalCards[role].slice(0, 8);
+  const [activeTab, setActiveTab] = useState(tabs[0]);
+  const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
+  const [ready, setReady] = useState(false);
+  const dashboard = roleDashboards[role];
+
+  useEffect(() => {
+    setUser(getStoredUser());
+    const hash = decodeURIComponent(window.location.hash.replace("#", ""));
+    const matchedTab = tabs.find((tab) => tabId(tab) === hash);
+    if (matchedTab) setActiveTab(matchedTab);
+    setReady(true);
+  }, []);
+
+  function selectTab(tab: string) {
+    setActiveTab(tab);
+    window.history.replaceState(null, "", `#${tabId(tab)}`);
+  }
+
+  if (!ready) {
+    return <section className="min-h-screen bg-slate-50 p-8"><Card className="container-page p-6 text-sm text-slate-600">Checking portal access...</Card></section>;
+  }
+
+  if (!localStorage.getItem("atechskills_access_token")) {
+    return (
+      <section className="min-h-screen bg-slate-50 p-8">
+        <Card className="container-page p-6">
+          <h1 className="text-2xl font-black">Login required</h1>
+          <p className="mt-2 text-sm text-slate-600">Please login with an authorized AtechSkills account to access this dashboard.</p>
+          <ButtonLink href="/login" className="mt-5">Go to Login</ButtonLink>
+        </Card>
+      </section>
+    );
+  }
+
+  if (!hasPortalAccess(role, user)) {
+    return (
+      <section className="min-h-screen bg-slate-50 p-8">
+        <Card className="container-page p-6">
+          <h1 className="text-2xl font-black">Access restricted</h1>
+          <p className="mt-2 text-sm text-slate-600">This dashboard is only available to {roleAccess[role].join(" or ")} accounts.</p>
+          <div className="mt-5 flex flex-wrap gap-3"><ButtonLink href="/student-dashboard" variant="secondary">Student Dashboard</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+        </Card>
+      </section>
+    );
+  }
+
+  return (
+    <section className="min-h-screen bg-slate-50">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="container-page flex min-h-20 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div><Badge>Secure Portal</Badge><h1 className="mt-2 text-3xl font-black">{dashboardLabels[role]}</h1><p className="mt-1 text-sm text-slate-500">{user?.name ?? user?.email} - {user?.roles?.join(", ")}</p></div>
+          <div className="flex flex-wrap gap-3"><ButtonLink href="/" variant="secondary">Website</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+        </div>
+      </div>
+      <div className="container-page grid gap-6 py-8 lg:grid-cols-[280px_1fr]">
+        <aside className="h-fit rounded-lg border border-slate-200 bg-white p-3 shadow-card">
+          <select value={activeTab} onChange={(event) => selectTab(event.target.value)} className="mb-3 w-full rounded-md border border-slate-200 px-3 py-3 text-sm font-semibold outline-none lg:hidden">
+            {tabs.map((tab) => <option key={tab}>{tab}</option>)}
+          </select>
+          <div className="hidden lg:block">
+            {tabs.map((tab) => (
+              <button key={tab} onClick={() => selectTab(tab)} className={`mb-1 flex w-full items-center justify-between rounded-md px-3 py-3 text-left text-sm font-semibold transition ${activeTab === tab ? "bg-brand-green text-white" : "text-slate-700 hover:bg-brand-mint hover:text-brand-green"}`}>
+                {tab}
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div>
+          {role === "admin" ? <AdminTabbedPanel activeTab={activeTab} /> : <RoleTabbedPanel role={role} activeTab={activeTab} dashboard={dashboard} />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RoleTabbedPanel({ role, activeTab, dashboard }: { role: "teacher" | "services"; activeTab: string; dashboard: any }) {
+  return (
+    <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-4">
+        {dashboard.kpis.map((item: any) => <Card key={item.label} className="p-5"><p className="text-sm text-slate-500">{item.label}</p><p className="mt-2 text-3xl font-black text-brand-green">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.caption}</p></Card>)}
+      </div>
+      {role === "teacher" && <TeacherWorkspace activeTab={activeTab} />}
+      {role === "services" && <ServicesWorkspace activeTab={activeTab} />}
+    </div>
+  );
+}
+
+function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
+  if (activeTab === "Courses") return <AdminCourseManager />;
+  if (activeTab === "Instructors") return <AdminMentorManager />;
+  if (activeTab === "Payments") return <AdminEnrollmentQueue />;
+  if (activeTab === "Live Classes") return <AdminScheduleForm />;
+  if (activeTab === "Jobs") return <AdminOpportunityManager />;
+  if (activeTab === "Staff") return <AdminStaffForm />;
+  if (activeTab === "Performance") return <AdminPerformancePanel />;
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 md:grid-cols-4">
+        {roleDashboards.admin.kpis.map((item) => <Card key={item.label} className="p-5"><p className="text-sm text-slate-500">{item.label}</p><p className="mt-2 text-3xl font-black text-brand-green">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.caption}</p></Card>)}
+      </div>
+      <Card className="p-6"><h2 className="text-xl font-bold">Admin Navigation</h2><p className="mt-2 text-sm text-slate-600">Use the left tabs to manage courses, instructors, payments, staff, jobs, live classes, and student performance. Each tab is a focused workspace.</p></Card>
+    </div>
+  );
+}
+
+function TeacherWorkspace({ activeTab }: { activeTab: string }) {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+  useEffect(() => {
+    fetch(`${apiBase}/lms/teacher/courses`, { headers: authHeaders() })
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error ?? "Unable to load assigned courses");
+        setState({ loading: false, data });
+      })
+      .catch((error) => setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load assigned courses" }));
+  }, []);
+  const courses = asArray(state.data);
+  return (
+    <Card className="p-6">
+      <h2 className="text-xl font-bold">{activeTab}</h2>
+      {state.loading && <p className="mt-4 text-sm text-slate-500">Loading assigned teaching workspace...</p>}
+      {state.error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+      {!state.loading && !state.error && courses.length === 0 && <p className="mt-4 text-sm text-slate-500">No courses assigned yet. Admin can assign courses from the admin dashboard.</p>}
+      <div className="mt-5 grid gap-3">
+        {courses.map((course) => <div key={course.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{course.title}</h3><p className="mt-1 text-sm text-slate-600">{course.enrollments?.length ?? 0} students - {course.sessions?.length ?? 0} live sessions - {course.assignments?.length ?? 0} assignments</p></div>)}
+      </div>
+    </Card>
+  );
+}
+
+function ServicesWorkspace({ activeTab }: { activeTab: string }) {
+  return <Card className="p-6"><h2 className="text-xl font-bold">{activeTab}</h2><p className="mt-2 text-sm text-slate-600">Student Services tools are restricted to support staff accounts. Ticket inbox, student lookup, payment support, and conversation history can be expanded here without exposing admin controls.</p><ButtonLink href="/student-services" className="mt-5">Open Support Form</ButtonLink></Card>;
+}
+
 export function AdminControlCenter() {
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-2">
@@ -642,6 +813,22 @@ function AdminCategoryManager({ onSaved }: { onSaved: () => void }) {
 
 function AdminMentorManager() {
   const [message, setMessage] = useState("");
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/admin-teachers`, { headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load instructors");
+      setTeachers(asArray(data).filter((teacher) => teacher.user?.isActive !== false));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load instructors");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -657,25 +844,60 @@ function AdminMentorManager() {
       if (!response.ok) throw new Error(data.error ?? "Unable to create mentor");
       setMessage(`Created instructor profile for ${data.name ?? data.email}`);
       form.reset();
+      load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to create mentor");
     }
   }
 
+  async function deactivate(id: string) {
+    if (!confirm("Deactivate this instructor account and unassign it from courses?")) return;
+    try {
+      const response = await fetch(`${apiBase}/admin-teachers/${id}`, { method: "DELETE", headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to deactivate instructor");
+      setMessage(`Deactivated instructor: ${data.email}`);
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to deactivate instructor");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
   return (
-    <Card className="p-6">
-      <h2 className="flex items-center gap-2 text-xl font-bold"><UserPlus className="text-brand-green" /> Mentors and Instructors</h2>
-      <p className="mt-2 text-sm text-slate-600">Create instructor credentials, then assign the instructor from the course form.</p>
-      <form onSubmit={submit} className="mt-5 grid gap-3">
-        <input required name="name" placeholder="Instructor name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <input required name="email" type="email" placeholder="Instructor email" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <input required name="password" type="password" minLength={8} placeholder="Temporary password" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <input name="title" placeholder="Designation, e.g. Senior Security Mentor" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <textarea name="bio" rows={3} placeholder="Instructor bio" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Instructor</button>
-      </form>
-      {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
-    </Card>
+    <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card className="p-6">
+        <h2 className="flex items-center gap-2 text-xl font-bold"><UserPlus className="text-brand-green" /> Add Instructor</h2>
+        <p className="mt-2 text-sm text-slate-600">Create instructor credentials, then assign the instructor from the course form.</p>
+        <form onSubmit={submit} className="mt-5 grid gap-3">
+          <input required name="name" placeholder="Instructor name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input required name="email" type="email" placeholder="Instructor email" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input required name="password" type="password" minLength={8} placeholder="Temporary password" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input name="title" placeholder="Designation, e.g. Senior Security Mentor" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <textarea name="bio" rows={3} placeholder="Instructor bio" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Save Instructor</button>
+        </form>
+        {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      </Card>
+      <Card className="p-6">
+        <div className="flex items-center justify-between gap-3"><h2 className="text-xl font-bold">Current Instructors</h2><button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button></div>
+        <div className="mt-5 grid gap-3">
+          {loading && <p className="text-sm text-slate-500">Loading instructors...</p>}
+          {!loading && teachers.length === 0 && <p className="text-sm text-slate-500">No instructors yet.</p>}
+          {teachers.map((teacher) => (
+            <div key={teacher.id} className="rounded-md border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h3 className="font-bold">{teacher.user?.name ?? "Instructor"}</h3><p className="text-sm text-slate-600">{teacher.user?.email} - {teacher.title ?? "No title"}</p><p className="text-xs text-slate-500">{teacher.courses?.length ?? 0} assigned courses</p></div>
+                <button onClick={() => deactivate(teacher.id)} className="rounded-md bg-brand-red px-3 py-2 text-xs font-bold text-white">Deactivate</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
   );
 }
 

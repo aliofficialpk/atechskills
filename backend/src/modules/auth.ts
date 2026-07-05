@@ -111,7 +111,7 @@ authRouter.post("/login", validate(loginSchema), asyncRoute(async (req, res) => 
     where: { email },
     include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } }
   }), 3);
-  if (!user || !(await bcrypt.compare(req.body.password, user.passwordHash))) return res.status(401).json({ error: "Invalid credentials" });
+  if (!user || !user.isActive || !(await bcrypt.compare(req.body.password, user.passwordHash))) return res.status(401).json({ error: "Invalid credentials" });
   const { roles, permissions } = getAccessClaims(user.roles);
   res.json({ user: { id: user.id, email: user.email, name: user.name, roles }, accessToken: signAccessToken({ id: user.id, email: user.email, roles, permissions }), refreshToken: signRefreshToken({ id: user.id, email: user.email }) });
 }));
@@ -170,6 +170,7 @@ authRouter.get("/google/callback", asyncRoute(async (req, res) => {
   const email = profile.email.toLowerCase();
   const role = await withDbRetry(() => prisma.role.upsert({ where: { name: "Student" }, update: {}, create: { name: "Student", description: "Learner role" } }), 3);
   const existingUser = await withDbRetry(() => prisma.user.findUnique({ where: { email }, include: { student: true, roles: true } }), 3);
+  if (existingUser && !existingUser.isActive) return res.redirect(`${env.FRONTEND_URL}/login?google=inactive`);
   const generatedPasswordHash = existingUser ? "" : await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12);
   const user = existingUser
     ? await withDbRetry(() => prisma.user.update({
