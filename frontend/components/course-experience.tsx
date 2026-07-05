@@ -70,9 +70,12 @@ function CourseEmptyState() {
       <GraduationCap className="mx-auto text-brand-green" size={42} />
       <h2 className="mt-4 text-2xl font-black">No published courses yet</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-        Admin can create course details, assign a teacher, set pricing, build modules, and publish the course from the admin dashboard.
+        Our next public cohorts are being prepared. Contact admissions for upcoming DevSecOps, cybersecurity, AI, cloud, programming, and data science training schedules.
       </p>
-      <ButtonLink href="/admin-dashboard" className="mt-5">Open Admin Dashboard</ButtonLink>
+      <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
+        <ButtonLink href="/contact">Talk to Admissions</ButtonLink>
+        <ButtonLink href="/daily-insights" variant="secondary">View Updates</ButtonLink>
+      </div>
     </Card>
   );
 }
@@ -138,8 +141,11 @@ export function CourseHomePreview() {
     return (
       <Card className="p-6">
         <h3 className="text-xl font-black">Courses are being prepared</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Admin can publish courses from the dashboard. Once published, they will appear here automatically.</p>
-        <ButtonLink href="/courses" className="mt-5">Browse Courses</ButtonLink>
+        <p className="mt-2 text-sm leading-6 text-slate-600">New public cohorts will appear here as soon as enrollment opens. You can still contact admissions for upcoming schedules and guidance.</p>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <ButtonLink href="/courses">Browse Courses</ButtonLink>
+          <ButtonLink href="/contact" variant="secondary">Contact Admissions</ButtonLink>
+        </div>
       </Card>
     );
   }
