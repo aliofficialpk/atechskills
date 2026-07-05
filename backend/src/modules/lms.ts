@@ -241,6 +241,7 @@ lmsRouter.get("/me", asyncRoute(async (req, res) => {
           certificates: { include: { course: true } }
         }
       },
+      roles: { include: { role: true } },
       notifications: { orderBy: { createdAt: "desc" }, take: 20 }
     }
   });
@@ -389,6 +390,9 @@ const courseEnrollmentHandler = asyncRoute(async (req, res) => {
   const course = await withDbRetry(() => prisma.course.findUnique({ where: { slug: String(req.params.slug) } }), 3);
   if (!course) return res.status(404).json({ error: "Course not found" });
 
+  if (!req.user?.roles.includes("Student")) {
+    return res.status(403).json({ error: "Only logged-in student accounts can request course enrollment." });
+  }
   const student = await ensureStudentForUser(req.user!.id);
   const parsedProfile = enrollmentProfileSchema.safeParse(req.body);
   if (!parsedProfile.success) {

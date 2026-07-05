@@ -24,7 +24,7 @@ function asArray<T = any>(value: unknown): T[] {
 
 const fallbackCourseCategories = fallbackCategories.map((category) => ({ id: "", name: category.name, slug: category.slug }));
 
-type StudentTab = "overview" | "courses" | "attendance" | "assignments" | "live" | "recordings" | "certificates" | "notifications";
+type StudentTab = "profile" | "overview" | "courses" | "attendance" | "assignments" | "live" | "recordings" | "certificates" | "notifications";
 
 function uniqueById(items: any[] = []) {
   return Array.from(new Map(items.filter(Boolean).map((item) => [item.id, item])).values());
@@ -113,6 +113,7 @@ export function StudentPortalDashboard() {
 
   const metrics = studentDashboardMetrics(state.data);
   const tabs: { id: StudentTab; label: string; icon: any; count?: number }[] = [
+    { id: "profile", label: "Profile", icon: UserPlus },
     { id: "overview", label: "Overview", icon: BookOpenCheck },
     { id: "courses", label: "Enrolled Courses", icon: BookOpenCheck, count: metrics.enrollments.length },
     { id: "attendance", label: "Attendance", icon: CheckCircle2, count: metrics.attendance.length },
@@ -155,6 +156,7 @@ export function StudentPortalDashboard() {
                 <Card className="p-5"><p className="text-sm text-slate-500">Certificates</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.certificateCount}</p><p className="mt-1 text-xs text-slate-500">{metrics.certificateCount ? "Issued certificates available" : "No certificates issued yet"}</p></Card>
               </div>
 
+              {activeTab === "profile" && <StudentProfilePanel data={state.data} metrics={metrics} />}
               {activeTab === "overview" && (
                 <div className="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
                   <Card className="overflow-hidden">
@@ -192,6 +194,34 @@ export function StudentPortalDashboard() {
         </div>
       </div>
     </section>
+  );
+}
+
+function StudentProfilePanel({ data, metrics }: { data: any; metrics: ReturnType<typeof studentDashboardMetrics> }) {
+  const roles = asArray<string>(data?.roles?.map?.((item: any) => item.role?.name ?? item) ?? []);
+  return (
+    <div className="mt-6 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+      <Card className="p-6">
+        <div className="grid size-16 place-items-center rounded-lg bg-brand-green text-2xl font-black text-white">
+          {String(data?.name ?? data?.email ?? "S").slice(0, 1).toUpperCase()}
+        </div>
+        <h2 className="mt-4 text-2xl font-black">{data?.name ?? "Student"}</h2>
+        <p className="mt-1 text-sm text-slate-600">{data?.email}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(roles.length ? roles : ["Student"]).map((role) => <Badge key={role}>{role}</Badge>)}
+        </div>
+      </Card>
+      <Card className="p-6">
+        <h2 className="text-xl font-bold">Profile Details</h2>
+        <div className="mt-5 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
+          <div className="rounded-md bg-slate-50 p-4"><p className="text-xs font-bold uppercase text-slate-400">Student ID</p><p className="mt-1 font-semibold">{data?.student?.studentCode ?? "Created after first LMS access"}</p></div>
+          <div className="rounded-md bg-slate-50 p-4"><p className="text-xs font-bold uppercase text-slate-400">Phone</p><p className="mt-1 font-semibold">{data?.phone ?? "Not added yet"}</p></div>
+          <div className="rounded-md bg-slate-50 p-4"><p className="text-xs font-bold uppercase text-slate-400">Enrollments</p><p className="mt-1 font-semibold">{metrics.enrollments.length}</p></div>
+          <div className="rounded-md bg-slate-50 p-4"><p className="text-xs font-bold uppercase text-slate-400">Certificates</p><p className="mt-1 font-semibold">{metrics.certificates.length}</p></div>
+        </div>
+        <p className="mt-5 text-sm leading-6 text-slate-600">Your name, phone, and enrollment contact details update when you submit a course request. Future profile editing can live here without mixing it into the public course forms.</p>
+      </Card>
+    </div>
   );
 }
 

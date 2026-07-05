@@ -239,8 +239,9 @@ export function EventRegistrationForm({ slug }: { slug: string }) {
 export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; courseTitle: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [user, setUser] = useState<{ name?: string; email?: string } | null>(null);
+  const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
   const [hasToken, setHasToken] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     setHasToken(Boolean(localStorage.getItem("atechskills_access_token")));
@@ -250,6 +251,7 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
     } catch {
       setUser(null);
     }
+    setAuthChecked(true);
   }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -281,6 +283,15 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
     }
   }
 
+  if (!authChecked) {
+    return (
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
+        <h2 className="text-xl font-bold text-slate-950">Checking account access...</h2>
+        <p className="text-sm leading-6 text-slate-600">Please wait while we verify your student session.</p>
+      </div>
+    );
+  }
+
   if (!hasToken) {
     return (
       <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
@@ -289,6 +300,19 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Login</Link>
           <Link href="/register" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800">Create Account</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.roles?.includes("Student")) {
+    return (
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
+        <h2 className="text-xl font-bold text-slate-950">Student account required</h2>
+        <p className="text-sm leading-6 text-slate-600">Course enrollment is only available from a student account. Please switch to a student login or create a new student account before applying.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Switch Account</Link>
+          <Link href="/register" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800">Create Student Account</Link>
         </div>
       </div>
     );
