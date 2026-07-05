@@ -229,6 +229,33 @@ async function canTeacherAccessCourse(userId: string, courseId: string) {
   return Boolean(course);
 }
 
+async function ensureSubmissionFileTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS submission_files (
+      submission_id TEXT PRIMARY KEY REFERENCES "Submission"(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function storeSubmissionPdf(submissionId: string, file: Express.Multer.File) {
+  await ensureSubmissionFileTable();
+  await prisma.$executeRaw`
+    INSERT INTO submission_files (submission_id, file_name, mime_type, file_size, data)
+    VALUES (${submissionId}, ${file.originalname}, ${file.mimetype}, ${file.size}, ${file.buffer})
+    ON CONFLICT (submission_id) DO UPDATE SET
+      file_name = EXCLUDED.file_name,
+      mime_type = EXCLUDED.mime_type,
+      file_size = EXCLUDED.file_size,
+      data = EXCLUDED.data,
+      created_at = now()
+  `;
+}
+
 lmsRouter.use(requireAuth);
 
 lmsRouter.get("/me", asyncRoute(async (req, res) => {
@@ -760,6 +787,7 @@ lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUplo
     },
     include: { assignment: { include: { course: true } }, user: true }
   });
+  await storeSubmissionPdf(submission.id, req.file);
   res.status(201).json(submission);
 }));
 
@@ -794,7 +822,40 @@ lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), a
     },
     include: { assignment: { include: { course: true } }, user: true }
   });
+  await storeSubmissionPdf(submission.id, req.file);
   res.status(201).json(submission);
+}));
+
+lmsRouter.get("/submissions/:id/download", requireRole("Teacher", "Admin", "Super Admin", "Student"), asyncRoute(async (req, res) => {
+  const submission = await prisma.submission.findUnique({
+    where: { id: String(req.params.id) },
+    include: { assignment: true }
+  });
+  if (!submission) return res.status(404).json({ error: "Submission not found" });
+
+  const isAdmin = req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role));
+  const isOwner = submission.userId === req.user!.id;
+  const isAssignedTeacher = req.user!.roles.includes("Teacher") ? await canTeacherAccessCourse(req.user!.id, submission.assignment.courseId) : false;
+  if (!isAdmin && !isOwner && !isAssignedTeacher) return res.status(403).json({ error: "You cannot download this submission." });
+
+  await ensureSubmissionFileTable();
+  const files = await prisma.$queryRaw<Array<{ file_name: string; mime_type: string; file_size: number; data: Buffer }>>`
+    SELECT file_name, mime_type, file_size, data
+    FROM submission_files
+    WHERE submission_id = ${submission.id}
+    LIMIT 1
+  `;
+  const file = files[0];
+  if (!file) {
+    if (submission.fileUrl) return res.redirect(submission.fileUrl);
+    return res.status(404).json({ error: "Submission file not found" });
+  }
+
+  const safeName = file.file_name.replace(/["\r\n]/g, "");
+  res.setHeader("Content-Type", file.mime_type || "application/pdf");
+  res.setHeader("Content-Length", String(file.file_size));
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName || "assignment.pdf"}"`);
+  res.send(file.data);
 }));
 
 lmsRouter.patch("/submissions/:id/grade", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
