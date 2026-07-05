@@ -25,13 +25,12 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/v1/:path*", "destination": "/api" },
     { "source": "/", "destination": "/api" }
   ],
   "functions": {
     "api/index.ts": {
-      "maxDuration": 60
-    },
-    "api/[...path].ts": {
       "maxDuration": 60
     }
   }
