@@ -307,11 +307,12 @@ lmsRouter.get("/admin/teachers", requireRole("Super Admin", "Admin"), asyncRoute
   res.json(teachers);
 }));
 
-lmsRouter.get("/teacher/courses", requireRole("Teacher"), asyncRoute(async (req, res) => {
+lmsRouter.get("/teacher/courses", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
   const teacher = await prisma.teacher.findUnique({ where: { userId: req.user!.id } });
-  if (!teacher) return res.json([]);
+  const isAdmin = req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role));
+  if (!teacher && !isAdmin) return res.json([]);
   const courses = await prisma.course.findMany({
-    where: { instructorId: teacher.id },
+    where: isAdmin ? {} : { instructorId: teacher!.id },
     include: {
       sections: { include: { lessons: true }, orderBy: { position: "asc" } },
       sessions: { include: { presences: true, attendance: true, recording: true }, orderBy: { startsAt: "asc" } },

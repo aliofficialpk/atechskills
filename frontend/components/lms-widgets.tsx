@@ -34,7 +34,7 @@ async function authedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   Object.entries(authHeaders()).forEach(([key, value]) => headers.set(key, value));
   const withAuth = { ...init, headers };
   let response = await fetch(input, withAuth);
-  if (response.status === 401 && await refreshSession()) {
+  if ((response.status === 401 || response.status === 403) && await refreshSession()) {
     const retryHeaders = new Headers(init.headers);
     Object.entries(authHeaders()).forEach(([key, value]) => retryHeaders.set(key, value));
     response = await fetch(input, { ...init, headers: retryHeaders });
@@ -161,7 +161,7 @@ export function StudentPortalDashboard() {
       <div className="border-b border-slate-200 bg-white">
         <div className="container-page flex min-h-20 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
           <div><Badge>Portal</Badge><h1 className="mt-2 text-3xl font-black">Student Dashboard</h1><p className="mt-1 text-sm text-slate-500">{state.data?.name ? `Signed in as ${state.data.name}` : "Your live AtechSkills learning workspace"}</p></div>
-          <div className="flex flex-wrap gap-3"><ButtonLink href="/courses" variant="secondary">Browse Courses</ButtonLink><ButtonLink href="/student-services" variant="secondary">Support</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+          <div className="flex flex-wrap gap-3"><ButtonLink href="/courses" variant="secondary">Browse Courses</ButtonLink><ButtonLink href="/student-services" variant="secondary">Support</ButtonLink></div>
         </div>
       </div>
       <div className="container-page grid gap-6 py-8 lg:grid-cols-[280px_1fr]">
@@ -502,7 +502,7 @@ type PortalRole = "admin" | "teacher" | "services";
 
 const roleAccess: Record<PortalRole, string[]> = {
   admin: ["Super Admin", "Admin"],
-  teacher: ["Teacher"],
+  teacher: ["Teacher", "Super Admin", "Admin"],
   services: ["Student Services"]
 };
 
@@ -541,11 +541,20 @@ export function SecureRoleDashboard({ role }: { role: PortalRole }) {
   const dashboard = roleDashboards[role];
 
   useEffect(() => {
-    setUser(getStoredUser());
-    const hash = decodeURIComponent(window.location.hash.replace("#", ""));
-    const matchedTab = tabs.find((tab) => tabId(tab) === hash);
-    if (matchedTab) setActiveTab(matchedTab);
-    setReady(true);
+    let mounted = true;
+    async function prepare() {
+      await refreshSession().catch(() => false);
+      if (!mounted) return;
+      setUser(getStoredUser());
+      const hash = decodeURIComponent(window.location.hash.replace("#", ""));
+      const matchedTab = tabs.find((tab) => tabId(tab) === hash);
+      if (matchedTab) setActiveTab(matchedTab);
+      setReady(true);
+    }
+    prepare();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   function selectTab(tab: string) {
@@ -575,7 +584,7 @@ export function SecureRoleDashboard({ role }: { role: PortalRole }) {
         <Card className="container-page p-6">
           <h1 className="text-2xl font-black">Access restricted</h1>
           <p className="mt-2 text-sm text-slate-600">This dashboard is only available to {roleAccess[role].join(" or ")} accounts.</p>
-          <div className="mt-5 flex flex-wrap gap-3"><ButtonLink href="/student-dashboard" variant="secondary">Student Dashboard</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+          <div className="mt-5 flex flex-wrap gap-3"><ButtonLink href="/" variant="secondary">Back to Website</ButtonLink></div>
         </Card>
       </section>
     );
@@ -586,7 +595,7 @@ export function SecureRoleDashboard({ role }: { role: PortalRole }) {
       <div className="border-b border-slate-200 bg-white">
         <div className="container-page flex min-h-20 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
           <div><Badge>Secure Portal</Badge><h1 className="mt-2 text-3xl font-black">{dashboardLabels[role]}</h1><p className="mt-1 text-sm text-slate-500">{user?.name ?? user?.email} - {user?.roles?.join(", ")}</p></div>
-          <div className="flex flex-wrap gap-3"><ButtonLink href="/" variant="secondary">Website</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+          <div className="flex flex-wrap gap-3"><ButtonLink href="/" variant="secondary">Website</ButtonLink></div>
         </div>
       </div>
       <div className="container-page grid gap-6 py-8 lg:grid-cols-[280px_1fr]">

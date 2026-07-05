@@ -313,7 +313,7 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
         <h2 className="text-xl font-bold text-slate-950">Student account required</h2>
         <p className="text-sm leading-6 text-slate-600">Course enrollment is only available from a student account. Please switch to a student login or create a new student account before applying.</p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Switch Account</Link>
+          <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Login</Link>
           <Link href="/register" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800">Create Student Account</Link>
         </div>
       </div>
