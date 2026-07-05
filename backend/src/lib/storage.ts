@@ -8,8 +8,15 @@ export async function uploadBufferToCloudinary(file: Express.Multer.File, folder
     };
   }
 
+  const resourceType = file.mimetype === "application/pdf" ? "raw" : "auto";
   const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream({ resource_type: "auto", folder }, (error, response) => {
+    const stream = cloudinary.uploader.upload_stream({
+      resource_type: resourceType,
+      folder,
+      use_filename: true,
+      unique_filename: true,
+      filename_override: file.originalname
+    }, (error, response) => {
       if (error || !response) reject(error ?? new Error("Upload failed"));
       else resolve(response as { secure_url: string; public_id: string });
     });
