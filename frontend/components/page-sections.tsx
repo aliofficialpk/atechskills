@@ -5,7 +5,7 @@ import { Badge, ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { CeoMessageSection } from "@/components/ceo-message";
 import { AuthForm, EnrollmentRequestForm, SmartForm } from "@/components/forms";
 import { CourseCatalog, CourseDetailsView, EnrollmentCourseGate } from "@/components/course-experience";
-import { AdminControlCenter, StudentLearningCenter } from "@/components/lms-widgets";
+import { AdminControlCenter, StudentPortalDashboard } from "@/components/lms-widgets";
 import { OpportunityBoard } from "@/components/opportunity-board";
 import { categories, courses, dashboardModules, events, faqs, insights, jobs, portalCards, roleDashboards, supportTypes, teamMembers, testimonials } from "@/lib/data";
 import { formatCurrency } from "@/lib/utils";
@@ -294,6 +294,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" | "forgot-passwo
 export function DashboardPage({ role }: { role: keyof typeof portalCards }) {
   const labels = { student: "Student Dashboard", teacher: "Teacher Dashboard", admin: "Admin Dashboard", services: "Student Services Dashboard" };
   const dashboard = roleDashboards[role];
+  if (role === "student") return <StudentPortalDashboard />;
   return (
     <section className="min-h-screen bg-slate-50">
       <div className="border-b border-slate-200 bg-white">
@@ -329,7 +330,6 @@ export function DashboardPage({ role }: { role: keyof typeof portalCards }) {
               </div>
             </Card>
           </div>
-          {role === "student" && <StudentLearningCenter />}
           {role === "admin" && <AdminControlCenter />}
           <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {dashboardModules[role].map((item) => <Card key={item.title} className="p-6" ><div className="flex items-start justify-between gap-3"><div><FileText className="text-brand-green" /><h2 className="mt-4 text-xl font-bold">{item.title}</h2><p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p></div><ArrowRight className="text-slate-400" /></div></Card>)}

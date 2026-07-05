@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookOpenCheck, BriefcaseBusiness, CheckCircle2, Clock, ExternalLink, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
+import { Award, Bell, BookOpenCheck, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock, ExternalLink, FileText, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 import { categories as fallbackCategories } from "@/lib/data";
 
@@ -23,6 +23,246 @@ function asArray<T = any>(value: unknown): T[] {
 }
 
 const fallbackCourseCategories = fallbackCategories.map((category) => ({ id: "", name: category.name, slug: category.slug }));
+
+type StudentTab = "overview" | "courses" | "attendance" | "assignments" | "live" | "recordings" | "certificates" | "notifications";
+
+function uniqueById(items: any[] = []) {
+  return Array.from(new Map(items.filter(Boolean).map((item) => [item.id, item])).values());
+}
+
+function percent(value: number, total: number) {
+  return total > 0 ? Math.round((value / total) * 100) : 0;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "Not scheduled";
+  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function studentDashboardMetrics(data: any) {
+  const student = data?.student;
+  const enrollments = asArray(student?.enrollments);
+  const activeEnrollments = enrollments.filter((item: any) => item.status === "ACTIVE");
+  const pendingEnrollments = enrollments.filter((item: any) => item.status === "PENDING");
+  const courses = enrollments.map((item: any) => item.course).filter(Boolean);
+  const sessions = uniqueById(courses.flatMap((course: any) => asArray(course.sessions)));
+  const attendance = asArray(student?.attendance);
+  const present = attendance.filter((item: any) => item.status === "PRESENT").length;
+  const assignments = uniqueById(courses.flatMap((course: any) => asArray(course.assignments)));
+  const recordings = uniqueById(courses.flatMap((course: any) => asArray(course.recordings).concat(asArray(course.sessions).map((session: any) => session.recording).filter(Boolean))));
+  const certificates = asArray(student?.certificates);
+  const sections = courses.flatMap((course: any) => asArray(course.sections));
+  const lessons = sections.flatMap((section: any) => asArray(section.lessons));
+  return {
+    enrollments,
+    activeEnrollments,
+    pendingEnrollments,
+    courses,
+    sessions,
+    attendance,
+    present,
+    assignments,
+    recordings,
+    certificates,
+    notifications: asArray(data?.notifications),
+    progress: lessons.length ? percent(certificates.length + present + activeEnrollments.length, lessons.length + sessions.length + enrollments.length) : activeEnrollments.length ? 10 : 0,
+    attendancePercent: percent(present, sessions.length),
+    assignmentText: assignments.length ? `0/${assignments.length}` : "0",
+    certificateCount: certificates.length
+  };
+}
+
+export function StudentPortalDashboard() {
+  const [state, setState] = useState<ApiState<any>>({ loading: true });
+  const [activeTab, setActiveTab] = useState<StudentTab>("overview");
+  const [sessionId, setSessionId] = useState("");
+  const [liveMessage, setLiveMessage] = useState("");
+
+  async function load() {
+    setState({ loading: true });
+    try {
+      const response = await fetch(`${apiBase}/lms/me`, { headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load dashboard");
+      setState({ data, loading: false });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load dashboard" });
+    }
+  }
+
+  async function liveAction(action: "join" | "heartbeat" | "leave") {
+    if (!sessionId) {
+      setLiveMessage("Select a live session from your schedule first.");
+      return;
+    }
+    try {
+      const response = await fetch(`${apiBase}/lms/live-sessions/${sessionId}/${action}`, { method: "POST", headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Live class action failed");
+      if (action === "join" && data.meetingUrl) window.open(data.meetingUrl, "_blank", "noopener,noreferrer");
+      setLiveMessage(action === "join" ? "Class joined. Keep this page open and use Update while attending." : data?.eligible ? "Attendance marked automatically." : "Progress updated. Attendance marks after half the class time.");
+      load();
+    } catch (error) {
+      setLiveMessage(error instanceof Error ? error.message : "Live class action failed");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const metrics = studentDashboardMetrics(state.data);
+  const tabs: { id: StudentTab; label: string; icon: any; count?: number }[] = [
+    { id: "overview", label: "Overview", icon: BookOpenCheck },
+    { id: "courses", label: "Enrolled Courses", icon: BookOpenCheck, count: metrics.enrollments.length },
+    { id: "attendance", label: "Attendance", icon: CheckCircle2, count: metrics.attendance.length },
+    { id: "assignments", label: "Assignments", icon: FileText, count: metrics.assignments.length },
+    { id: "live", label: "Live Schedule", icon: CalendarDays, count: metrics.sessions.length },
+    { id: "recordings", label: "Recordings", icon: PlayCircle, count: metrics.recordings.length },
+    { id: "certificates", label: "Certificates", icon: Award, count: metrics.certificates.length },
+    { id: "notifications", label: "Notifications", icon: Bell, count: metrics.notifications.length }
+  ];
+
+  return (
+    <section className="min-h-screen bg-slate-50">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="container-page flex min-h-20 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div><Badge>Portal</Badge><h1 className="mt-2 text-3xl font-black">Student Dashboard</h1><p className="mt-1 text-sm text-slate-500">{state.data?.name ? `Signed in as ${state.data.name}` : "Your live AtechSkills learning workspace"}</p></div>
+          <div className="flex flex-wrap gap-3"><ButtonLink href="/courses" variant="secondary">Browse Courses</ButtonLink><ButtonLink href="/student-services" variant="secondary">Support</ButtonLink><ButtonLink href="/login">Switch Account</ButtonLink></div>
+        </div>
+      </div>
+      <div className="container-page grid gap-6 py-8 lg:grid-cols-[280px_1fr]">
+        <aside className="h-fit rounded-lg border border-slate-200 bg-white p-3 shadow-card">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-md px-3 py-3 text-left text-sm font-semibold transition ${activeTab === tab.id ? "bg-brand-green text-white" : "text-slate-700 hover:bg-brand-mint hover:text-brand-green"}`}>
+                <span className="flex items-center gap-2"><Icon size={17} /> {tab.label}</span>
+                {typeof tab.count === "number" && <span className={`rounded-full px-2 py-0.5 text-xs ${activeTab === tab.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>{tab.count}</span>}
+              </button>
+            );
+          })}
+        </aside>
+        <div>
+          {state.loading && <Card className="p-6 text-sm text-slate-500">Loading your real LMS data...</Card>}
+          {state.error && <Card className="p-6 text-sm text-red-700">{state.error}</Card>}
+          {!state.loading && !state.error && (
+            <>
+              <div className="grid gap-4 md:grid-cols-4">
+                <Card className="p-5"><p className="text-sm text-slate-500">Course Progress</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.progress}%</p><p className="mt-1 text-xs text-slate-500">{metrics.activeEnrollments.length} active / {metrics.pendingEnrollments.length} pending</p></Card>
+                <Card className="p-5"><p className="text-sm text-slate-500">Attendance</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.attendancePercent}%</p><p className="mt-1 text-xs text-slate-500">{metrics.present}/{metrics.sessions.length} scheduled sessions present</p></Card>
+                <Card className="p-5"><p className="text-sm text-slate-500">Assignments</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.assignmentText}</p><p className="mt-1 text-xs text-slate-500">{metrics.assignments.length ? "Submissions will update after grading is enabled" : "No assignments assigned yet"}</p></Card>
+                <Card className="p-5"><p className="text-sm text-slate-500">Certificates</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.certificateCount}</p><p className="mt-1 text-xs text-slate-500">{metrics.certificateCount ? "Issued certificates available" : "No certificates issued yet"}</p></Card>
+              </div>
+
+              {activeTab === "overview" && (
+                <div className="mt-6 grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+                  <Card className="overflow-hidden">
+                    <div className="border-b border-slate-200 p-5"><h2 className="text-xl font-bold">Learning Plan</h2><p className="mt-1 text-sm text-slate-500">Built from your actual enrollments, payment approvals, classes, recordings, and certificates.</p></div>
+                    <div className="divide-y divide-slate-100">
+                      {metrics.enrollments.length === 0 && <div className="p-5 text-sm text-slate-500">No learning plan yet. Enroll in a course and upload payment proof to start.</div>}
+                      {metrics.enrollments.slice(0, 5).map((item: any) => (
+                        <div key={item.id} className="grid gap-3 p-5 md:grid-cols-[1fr_auto] md:items-center">
+                          <div><h3 className="font-bold">{item.course?.title ?? "Course"}</h3><p className="mt-1 text-sm text-slate-600">{item.course?.scheduleText ?? item.adminNote ?? "Schedule appears after admin creates live classes."}</p></div>
+                          <Badge>{item.status} / {item.paymentStatus}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                  <Card className="p-5">
+                    <h2 className="text-xl font-bold">Quick Actions</h2>
+                    <div className="mt-4 grid gap-3">
+                      <button onClick={() => setActiveTab("live")} className="inline-flex min-h-11 items-center justify-between rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Join Live Class <PlayCircle size={16} /></button>
+                      <button onClick={() => setActiveTab("recordings")} className="inline-flex min-h-11 items-center justify-between rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold">Open Recordings <PlayCircle size={16} /></button>
+                      <ButtonLink href="/student-services" variant="secondary" className="justify-between">Create Support Ticket <ExternalLink size={16} /></ButtonLink>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {activeTab === "courses" && <StudentCoursesPanel enrollments={metrics.enrollments} reload={load} />}
+              {activeTab === "attendance" && <StudentAttendancePanel attendance={metrics.attendance} sessions={metrics.sessions} />}
+              {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} />}
+              {activeTab === "live" && <StudentLivePanel sessions={metrics.sessions} sessionId={sessionId} setSessionId={setSessionId} liveAction={liveAction} message={liveMessage} />}
+              {activeTab === "recordings" && <StudentRecordingsPanel recordings={metrics.recordings} />}
+              {activeTab === "certificates" && <StudentCertificatesPanel certificates={metrics.certificates} />}
+              {activeTab === "notifications" && <StudentNotificationsPanel notifications={metrics.notifications} />}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StudentCoursesPanel({ enrollments, reload }: { enrollments: any[]; reload: () => void }) {
+  return (
+    <Card className="mt-6 p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div><h2 className="text-xl font-bold">My Enrolled Courses</h2><p className="mt-1 text-sm text-slate-500">Only courses connected to your logged-in account appear here.</p></div>
+        <button onClick={reload} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+      </div>
+      <div className="mt-5 grid gap-3">
+        {enrollments.length === 0 && <p className="text-sm text-slate-500">No enrollments yet. Pick a course and upload payment proof to request access.</p>}
+        {enrollments.map((item) => (
+          <div key={item.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">{item.course?.title ?? "Course"}</h3><Badge>{item.status} / {item.paymentStatus}</Badge></div>
+            <p className="mt-2 text-sm text-slate-600">{item.course?.summary ?? item.course?.scheduleText ?? "Course access will update after admin approval."}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500"><span>Requested: {formatDateTime(item.requestedAt)}</span>{item.enrolledAt && <span>Active: {formatDateTime(item.enrolledAt)}</span>}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function StudentAttendancePanel({ attendance, sessions }: { attendance: any[]; sessions: any[] }) {
+  return (
+    <Card className="mt-6 p-6">
+      <h2 className="text-xl font-bold">Attendance</h2>
+      <p className="mt-2 text-sm text-slate-600">Auto-marked after you stay for at least half of the scheduled class duration.</p>
+      <div className="mt-5 grid gap-3">
+        {attendance.length === 0 && <p className="text-sm text-slate-500">{sessions.length ? "No attendance has been marked yet." : "No scheduled sessions yet."}</p>}
+        {attendance.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><div className="flex justify-between gap-3"><h3 className="font-bold">{item.liveSession?.title ?? "Session"}</h3><Badge>{item.status}</Badge></div><p className="mt-1 text-sm text-slate-600">{formatDateTime(item.markedAt)}</p></div>)}
+      </div>
+    </Card>
+  );
+}
+
+function StudentAssignmentsPanel({ assignments }: { assignments: any[] }) {
+  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Assignments</h2><div className="mt-5 grid gap-3">{assignments.length === 0 && <p className="text-sm text-slate-500">No assignments have been added to your enrolled courses yet.</p>}{assignments.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.description ?? "Assignment details will appear here."}</p><p className="mt-2 text-xs text-slate-500">Due: {formatDateTime(item.dueAt)}</p></div>)}</div></Card>;
+}
+
+function StudentLivePanel({ sessions, sessionId, setSessionId, liveAction, message }: { sessions: any[]; sessionId: string; setSessionId: (id: string) => void; liveAction: (action: "join" | "heartbeat" | "leave") => void; message: string }) {
+  return (
+    <Card className="mt-6 p-6">
+      <h2 className="text-xl font-bold">Live Class Attendance</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">Select a session, join the lecture, update while attending, and leave when done.</p>
+      <div className="mt-5 grid gap-3">
+        {sessions.length === 0 && <p className="text-sm text-slate-500">No live classes have been scheduled for your active courses yet.</p>}
+        {sessions.map((session) => <button key={session.id} onClick={() => setSessionId(session.id)} className={`rounded-md border p-4 text-left transition ${sessionId === session.id ? "border-brand-green bg-emerald-50" : "border-slate-200 bg-white hover:border-brand-green"}`}><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{session.title}</h3><Badge>{session.status}</Badge></div><p className="mt-1 text-sm text-slate-600">{formatDateTime(session.startsAt)} - {session.expectedDurationMinutes} minutes</p></button>)}
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <button onClick={() => liveAction("join")} className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-green px-3 py-3 text-sm font-semibold text-white"><PlayCircle size={16} /> Join</button>
+        <button onClick={() => liveAction("heartbeat")} className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-semibold"><Clock size={16} /> Update</button>
+        <button onClick={() => liveAction("leave")} className="inline-flex items-center justify-center gap-2 rounded-md bg-brand-red px-3 py-3 text-sm font-semibold text-white"><CheckCircle2 size={16} /> Leave</button>
+      </div>
+      {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+    </Card>
+  );
+}
+
+function StudentRecordingsPanel({ recordings }: { recordings: any[] }) {
+  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Recordings</h2><div className="mt-5 grid gap-3">{recordings.length === 0 && <p className="text-sm text-slate-500">No recordings are attached to your courses yet.</p>}{recordings.map((item) => <a key={item.id} href={item.url} target="_blank" className="rounded-md border border-slate-200 p-4 transition hover:border-brand-green"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.storage ?? "recording"}{item.duration ? ` - ${item.duration} min` : ""}</p></a>)}</div></Card>;
+}
+
+function StudentCertificatesPanel({ certificates }: { certificates: any[] }) {
+  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Certificates</h2><div className="mt-5 grid gap-3">{certificates.length === 0 && <p className="text-sm text-slate-500">No certificates have been issued yet.</p>}{certificates.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{item.course?.title ?? "Certificate"}</h3><p className="mt-1 text-sm text-slate-600">Certificate ID: {item.certificateCode}</p>{item.pdfUrl && <a href={item.pdfUrl} target="_blank" className="mt-3 inline-flex rounded-md bg-brand-green px-3 py-2 text-sm font-semibold text-white">Download PDF</a>}</div>)}</div></Card>;
+}
+
+function StudentNotificationsPanel({ notifications }: { notifications: any[] }) {
+  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Notifications</h2><div className="mt-5 grid gap-3">{notifications.length === 0 && <p className="text-sm text-slate-500">No notifications yet. Enrollment updates and class reminders will appear here.</p>}{notifications.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.body}</p><p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p></div>)}</div></Card>;
+}
 
 export function StudentLearningCenter() {
   const [state, setState] = useState<ApiState<any>>({ loading: true });

@@ -214,9 +214,22 @@ lmsRouter.get("/me", asyncRoute(async (req, res) => {
     include: {
       student: {
         include: {
-          enrollments: { include: { course: { include: { sessions: true } } }, orderBy: { requestedAt: "desc" } },
+          enrollments: {
+            include: {
+              course: {
+                include: {
+                  sessions: { orderBy: { startsAt: "asc" }, include: { recording: true } },
+                  assignments: { orderBy: { dueAt: "asc" } },
+                  recordings: { orderBy: { createdAt: "desc" } },
+                  sections: { include: { lessons: { orderBy: { position: "asc" } } }, orderBy: { position: "asc" } }
+                }
+              }
+            },
+            orderBy: { requestedAt: "desc" }
+          },
           attendance: { include: { liveSession: true }, orderBy: { markedAt: "desc" } },
           presences: { include: { liveSession: true }, orderBy: { joinedAt: "desc" } },
+          attempts: { include: { quiz: true }, orderBy: { submittedAt: "desc" } },
           certificates: { include: { course: true } }
         }
       },
