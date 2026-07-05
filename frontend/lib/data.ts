@@ -139,9 +139,9 @@ export const testimonials = [
 ];
 
 export const dashboardStats = [
-  { label: "Learners", value: "50K+", icon: UsersRound },
+  { label: "Learners", value: "5K+", icon: UsersRound },
   { label: "Courses", value: "100+", icon: BookOpenCheck },
-  { label: "Expert Trainers", value: "200+", icon: GraduationCap },
+  { label: "Expert Trainers", value: "20+", icon: GraduationCap },
   { label: "Success Rate", value: "98%", icon: Handshake }
 ];
 
@@ -226,7 +226,7 @@ export const roleDashboards = {
   },
   admin: {
     kpis: [
-      { label: "Total Students", value: "50K+", caption: "All-time platform learners" },
+      { label: "Total Students", value: "5K+", caption: "All-time platform learners" },
       { label: "Active Courses", value: "100+", caption: "Published and cohort-based" },
       { label: "Open Tickets", value: "18", caption: "Student services queue" },
       { label: "Revenue", value: "$42K", caption: "Current month overview" }

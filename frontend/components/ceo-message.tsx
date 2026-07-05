@@ -10,7 +10,7 @@ const paragraphs = [
 const stats = [
   {
     label: "Learners",
-    value: "50K+",
+    value: "5K+",
     icon: UsersRound,
     color: "text-brand-green",
     circle: "bg-brand-green/10"
@@ -24,7 +24,7 @@ const stats = [
   },
   {
     label: "Expert Trainers",
-    value: "200+",
+    value: "20+",
     icon: Award,
     color: "text-brand-green",
     circle: "bg-brand-green/10"

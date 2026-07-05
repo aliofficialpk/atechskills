@@ -75,12 +75,13 @@ const credentialsSchema = z.object({
   body: z.object({
     email: z.string().email(),
     password: z.string().min(8),
-    name: z.string().min(2).optional()
+    name: z.string().min(2).optional(),
+    phone: z.string().min(7).optional()
   })
 });
 
 authRouter.post("/register", validate(credentialsSchema), asyncRoute(async (req, res) => {
-  const { email, password, name } = req.body;
+  const { email, password, name, phone } = req.body;
   const passwordHash = await bcrypt.hash(password, 12);
   const role = await withDbRetry(() => prisma.role.upsert({ where: { name: "Student" }, update: {}, create: { name: "Student", description: "Learner role" } }), 3);
   const user = await withDbRetry(() => prisma.user.create({
@@ -88,6 +89,7 @@ authRouter.post("/register", validate(credentialsSchema), asyncRoute(async (req,
       email,
       passwordHash,
       name: name ?? email.split("@")[0],
+      phone,
       roles: { create: { roleId: role.id } },
       student: { create: { studentCode: `ATS-${Date.now().toString(36).toUpperCase()}` } }
     },

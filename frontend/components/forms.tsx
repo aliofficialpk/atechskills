@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Send, CheckCircle2, LogIn, ArrowRight } from "lucide-react";
@@ -99,7 +99,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
     const endpoint = isLogin ? "/auth/login" : isRegister ? "/auth/register" : "/auth/forgot-password";
     const payload = isRecovery
       ? { email: values.email }
-      : { name: values.name, email: values.email, password: values.password };
+      : { name: values.name, email: values.email, phone: values.phone, password: values.password };
 
     try {
       const response = await fetch(`${apiBase}${endpoint}`, {
@@ -148,10 +148,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
         </>
       )}
       {isRegister && (
-        <label className="grid gap-2 text-sm font-medium text-slate-700">
-          Full name
-          <input required name="name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
-        </label>
+        <>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Full name
+            <input required name="name" autoComplete="name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Phone / WhatsApp
+            <input required name="phone" minLength={7} autoComplete="tel" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          </label>
+        </>
       )}
       <label className="grid gap-2 text-sm font-medium text-slate-700">
         {isLogin ? "Username or email" : "Email"}
@@ -233,6 +239,18 @@ export function EventRegistrationForm({ slug }: { slug: string }) {
 export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; courseTitle: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [user, setUser] = useState<{ name?: string; email?: string } | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    setHasToken(Boolean(localStorage.getItem("atechskills_access_token")));
+    try {
+      const raw = localStorage.getItem("atechskills_user");
+      setUser(raw ? JSON.parse(raw) : null);
+    } catch {
+      setUser(null);
+    }
+  }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -263,6 +281,19 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
     }
   }
 
+  if (!hasToken) {
+    return (
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
+        <h2 className="text-xl font-bold text-slate-950">Login required to enroll</h2>
+        <p className="text-sm leading-6 text-slate-600">Create a student account or login first. Your enrollment request, payment proof, and course access will be attached to the same account.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Link href="/login" className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">Login</Link>
+          <Link href="/register" className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800">Create Account</Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-card">
       <h2 className="text-xl font-bold text-slate-950">Enroll in {courseTitle}</h2>
@@ -272,6 +303,20 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
         <p className="mt-1 text-lg font-black tracking-wide">55105002806178</p>
         <p className="mt-2 text-xs">Send the fee, then upload a screenshot/PDF proof below. Admin will verify and confirm your enrollment.</p>
       </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Full name
+          <input required name="name" defaultValue={user?.name ?? ""} autoComplete="name" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </label>
+        <label className="grid gap-2 text-sm font-medium text-slate-700">
+          Email
+          <input required name="email" type="email" defaultValue={user?.email ?? ""} autoComplete="email" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+        </label>
+      </div>
+      <label className="grid gap-2 text-sm font-medium text-slate-700">
+        Phone / WhatsApp
+        <input required name="phone" minLength={7} autoComplete="tel" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+      </label>
       <label className="grid gap-2 text-sm font-medium text-slate-700">
         Paid amount
         <input required name="paidAmount" type="number" min="0" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
@@ -280,10 +325,6 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
         Payment proof screenshot or PDF
         <input required name="paymentProof" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
       </label>
-      <div className="flex flex-wrap gap-3 text-sm">
-        <Link href="/login" className="font-semibold text-brand-green">Login first</Link>
-        <Link href="/register" className="font-semibold text-brand-red">Create account</Link>
-      </div>
       <label className="grid gap-2 text-sm font-medium text-slate-700">
         Notes for admin
         <textarea name="message" rows={3} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" placeholder="Transaction ID, sender account name, preferred batch, or question" />

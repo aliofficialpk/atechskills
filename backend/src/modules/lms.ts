@@ -79,6 +79,14 @@ const liveSessionGenerationSchema = z.object({
   })
 });
 
+const enrollmentProfileSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  phone: z.string().min(7),
+  paidAmount: z.coerce.number().nonnegative().optional(),
+  message: z.string().optional()
+});
+
 function requiredSecondsForSession(session: { expectedDurationMinutes: number; attendanceThresholdPercent: number }) {
   return Math.ceil(session.expectedDurationMinutes * 60 * (session.attendanceThresholdPercent / 100));
 }
@@ -382,20 +390,33 @@ const courseEnrollmentHandler = asyncRoute(async (req, res) => {
   if (!course) return res.status(404).json({ error: "Course not found" });
 
   const student = await ensureStudentForUser(req.user!.id);
+  const parsedProfile = enrollmentProfileSchema.safeParse(req.body);
+  if (!parsedProfile.success) {
+    return res.status(400).json({ error: "Full name, matching email, phone number, and payment details are required." });
+  }
+  const profile = parsedProfile.data;
+  if (profile.email.toLowerCase() !== req.user!.email.toLowerCase()) {
+    return res.status(400).json({ error: "Enrollment email must match your logged-in account email." });
+  }
   const isFree = course.isFree || Number(course.price) === 0;
   if (!isFree && !req.file) return res.status(400).json({ error: "Payment proof screenshot or PDF is required for paid enrollment." });
+  if (!isFree && profile.paidAmount === undefined) return res.status(400).json({ error: "Paid amount is required for paid course enrollment." });
 
   const proof = req.file ? await uploadBufferToCloudinary(req.file, "atechskills/payment-proofs") : undefined;
+  await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { name: profile.name, phone: profile.phone }
+  });
   const enrollment = await prisma.enrollment.upsert({
     where: { studentId_courseId: { studentId: student.id, courseId: course.id } },
     update: {
       status: isFree ? "ACTIVE" : "PENDING",
       paymentStatus: isFree ? "NOT_REQUIRED" : "UNDER_REVIEW",
-      paidAmount: req.body.paidAmount ? Number(req.body.paidAmount) : undefined,
+      paidAmount: profile.paidAmount,
       paymentProofUrl: proof?.url,
       paymentProofPublicId: proof?.publicId,
       paymentSubmittedAt: proof ? new Date() : undefined,
-      adminNote: null
+      adminNote: profile.message ?? null
     },
     create: {
       studentId: student.id,
@@ -403,7 +424,7 @@ const courseEnrollmentHandler = asyncRoute(async (req, res) => {
       courseId: course.id,
       status: isFree ? "ACTIVE" : "PENDING",
       paymentStatus: isFree ? "NOT_REQUIRED" : "UNDER_REVIEW",
-      paidAmount: req.body.paidAmount ? Number(req.body.paidAmount) : undefined,
+      paidAmount: profile.paidAmount,
       paymentProofUrl: proof?.url,
       paymentProofPublicId: proof?.publicId,
       paymentSubmittedAt: proof ? new Date() : undefined,
