@@ -22,3 +22,7 @@ export function signRefreshToken(user: Pick<TokenUser, "id" | "email">) {
 export function verifyAccessToken(token: string) {
   return jwt.verify(token, env.JWT_ACCESS_SECRET) as TokenUser;
 }
+
+export function verifyRefreshToken(token: string) {
+  return jwt.verify(token, env.JWT_REFRESH_SECRET) as Pick<TokenUser, "id" | "email">;
+}

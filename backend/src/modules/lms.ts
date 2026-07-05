@@ -18,6 +18,14 @@ const upload = multer({
   }
 });
 
+const assignmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    cb(null, file.mimetype === "application/pdf");
+  }
+});
+
 const courseSchema = z.object({
   body: z.object({
     title: z.string().min(3),
@@ -214,6 +222,13 @@ async function finalizeSessionAttendance(liveSessionId: string) {
   };
 }
 
+async function canTeacherAccessCourse(userId: string, courseId: string) {
+  const teacher = await prisma.teacher.findUnique({ where: { userId } });
+  if (!teacher) return false;
+  const course = await prisma.course.findFirst({ where: { id: courseId, instructorId: teacher.id }, select: { id: true } });
+  return Boolean(course);
+}
+
 lmsRouter.use(requireAuth);
 
 lmsRouter.get("/me", asyncRoute(async (req, res) => {
@@ -227,7 +242,7 @@ lmsRouter.get("/me", asyncRoute(async (req, res) => {
               course: {
                 include: {
                   sessions: { orderBy: { startsAt: "asc" }, include: { recording: true } },
-                  assignments: { orderBy: { dueAt: "asc" } },
+                  assignments: { orderBy: { dueAt: "asc" }, include: { submissions: { where: { userId: req.user!.id }, orderBy: { submittedAt: "desc" } } } },
                   recordings: { orderBy: { createdAt: "desc" } },
                   sections: { include: { lessons: { orderBy: { position: "asc" } } }, orderBy: { position: "asc" } }
                 }
@@ -297,10 +312,27 @@ lmsRouter.get("/teacher/courses", requireRole("Teacher"), asyncRoute(async (req,
   if (!teacher) return res.json([]);
   const courses = await prisma.course.findMany({
     where: { instructorId: teacher.id },
-    include: { sections: { include: { lessons: true }, orderBy: { position: "asc" } }, sessions: true, assignments: true, enrollments: { include: { student: { include: { user: true } } } } },
+    include: {
+      sections: { include: { lessons: true }, orderBy: { position: "asc" } },
+      sessions: { include: { presences: true, attendance: true, recording: true }, orderBy: { startsAt: "asc" } },
+      assignments: { include: { submissions: { include: { user: true }, orderBy: { submittedAt: "desc" } } }, orderBy: { dueAt: "asc" } },
+      enrollments: { include: { student: { include: { user: true, attendance: true, presences: true, certificates: true } } }, orderBy: { requestedAt: "desc" } }
+    },
     orderBy: { createdAt: "desc" }
   });
   res.json(courses);
+}));
+
+lmsRouter.get("/teacher/submissions", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
+  const where = req.user!.roles.includes("Teacher") && !req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role))
+    ? { assignment: { course: { instructor: { userId: req.user!.id } } } }
+    : {};
+  const submissions = await prisma.submission.findMany({
+    where,
+    include: { user: { include: { student: true } }, assignment: { include: { course: true } } },
+    orderBy: { submittedAt: "desc" }
+  });
+  res.json(submissions);
 }));
 
 lmsRouter.post("/courses", requirePermission("courses.manage"), validate(courseSchema), asyncRoute(async (req, res) => {
@@ -498,6 +530,61 @@ lmsRouter.patch("/admin/enrollments/:id/reject", requireRole("Super Admin", "Adm
   res.json(enrollment);
 }));
 
+lmsRouter.get("/admin/students", requireRole("Super Admin", "Admin"), asyncRoute(async (_req, res) => {
+  const students = await prisma.student.findMany({
+    include: {
+      user: true,
+      enrollments: { include: { course: { include: { instructor: { include: { user: true } } } } }, orderBy: { requestedAt: "desc" } },
+      attendance: true,
+      presences: true,
+      certificates: { include: { course: true } }
+    },
+    orderBy: { user: { name: "asc" } }
+  });
+
+  res.json(students.map((student) => ({
+    id: student.id,
+    studentCode: student.studentCode,
+    name: student.user.name,
+    email: student.user.email,
+    phone: student.user.phone,
+    isActive: student.user.isActive,
+    enrollments: student.enrollments,
+    activeEnrollments: student.enrollments.filter((item) => item.status === "ACTIVE").length,
+    pendingEnrollments: student.enrollments.filter((item) => item.status === "PENDING").length,
+    attendanceMarked: student.attendance.length,
+    liveMinutes: Math.round(student.presences.reduce((sum, item) => sum + item.totalSeconds, 0) / 60),
+    certificates: student.certificates
+  })));
+}));
+
+lmsRouter.get("/admin/course-enrollment-summary", requireRole("Super Admin", "Admin"), asyncRoute(async (_req, res) => {
+  const courses = await prisma.course.findMany({
+    include: {
+      category: true,
+      instructor: { include: { user: true } },
+      enrollments: { include: { student: { include: { user: true } } }, orderBy: { requestedAt: "desc" } },
+      _count: { select: { enrollments: true, sessions: true, assignments: true } }
+    },
+    orderBy: { title: "asc" }
+  });
+  res.json(courses.map((course) => ({
+    id: course.id,
+    title: course.title,
+    slug: course.slug,
+    status: course.status,
+    category: course.category,
+    instructor: course.instructor,
+    enrollmentCount: course._count.enrollments,
+    activeCount: course.enrollments.filter((item) => item.status === "ACTIVE").length,
+    pendingCount: course.enrollments.filter((item) => item.status === "PENDING").length,
+    rejectedCount: course.enrollments.filter((item) => item.status === "REJECTED").length,
+    sessionsCount: course._count.sessions,
+    assignmentsCount: course._count.assignments,
+    enrollments: course.enrollments
+  })));
+}));
+
 lmsRouter.get("/admin/student-performance", requireRole("Super Admin", "Admin", "Teacher"), asyncRoute(async (_req, res) => {
   const students = await prisma.student.findMany({
     include: {
@@ -635,8 +722,71 @@ lmsRouter.post("/attendance", requireRole("Teacher", "Admin", "Super Admin"), as
   res.status(201).json(attendance);
 }));
 
-lmsRouter.post("/assignments", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => res.status(201).json(await prisma.assignment.create({ data: req.body }))));
-lmsRouter.post("/submissions", asyncRoute(async (req, res) => res.status(201).json(await prisma.submission.create({ data: { ...req.body, userId: req.user!.id } }))));
+lmsRouter.post("/assignments", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
+  const courseId = String(req.body.courseId ?? "");
+  if (req.user!.roles.includes("Teacher") && !req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role))) {
+    const allowed = await canTeacherAccessCourse(req.user!.id, courseId);
+    if (!allowed) return res.status(403).json({ error: "Teachers can create assignments only for assigned courses." });
+  }
+  const assignment = await prisma.assignment.create({
+    data: {
+      courseId,
+      title: String(req.body.title ?? ""),
+      description: req.body.description,
+      dueAt: req.body.dueAt ? new Date(req.body.dueAt) : undefined,
+      maxScore: Number(req.body.maxScore ?? 100)
+    }
+  });
+  res.status(201).json(assignment);
+}));
+
+lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
+  const assignment = await prisma.assignment.findUnique({ where: { id: String(req.params.id) }, include: { course: true } });
+  if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+  if (!req.file) return res.status(400).json({ error: "PDF assignment file is required." });
+
+  const student = await ensureStudentForUser(req.user!.id);
+  const enrollment = await prisma.enrollment.findUnique({ where: { studentId_courseId: { studentId: student.id, courseId: assignment.courseId } } });
+  if (!enrollment || enrollment.status !== "ACTIVE") return res.status(403).json({ error: "Active enrollment is required before submitting this assignment." });
+
+  const uploadResult = await uploadBufferToCloudinary(req.file, "atechskills/assignment-submissions");
+  const submission = await prisma.submission.create({
+    data: {
+      assignmentId: assignment.id,
+      userId: req.user!.id,
+      fileUrl: uploadResult.url,
+      answer: req.body.answer ? String(req.body.answer) : undefined
+    },
+    include: { assignment: { include: { course: true } }, user: true }
+  });
+  res.status(201).json(submission);
+}));
+
+lmsRouter.patch("/submissions/:id/grade", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {
+  const submission = await prisma.submission.findUnique({ where: { id: String(req.params.id) }, include: { assignment: true } });
+  if (!submission) return res.status(404).json({ error: "Submission not found" });
+  if (req.user!.roles.includes("Teacher") && !req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role))) {
+    const allowed = await canTeacherAccessCourse(req.user!.id, submission.assignment.courseId);
+    if (!allowed) return res.status(403).json({ error: "Teachers can grade only assigned course submissions." });
+  }
+  const graded = await prisma.submission.update({
+    where: { id: submission.id },
+    data: {
+      score: req.body.score === undefined || req.body.score === "" ? null : Number(req.body.score),
+      feedback: req.body.feedback ? String(req.body.feedback) : null
+    },
+    include: { user: true, assignment: { include: { course: true } } }
+  });
+  await prisma.notification.create({
+    data: {
+      userId: graded.userId,
+      title: "Assignment graded",
+      body: `${graded.assignment.title} has been reviewed${graded.score === null ? "." : ` with score ${graded.score}.`}`,
+      type: "ASSIGNMENT"
+    }
+  });
+  res.json(graded);
+}));
 lmsRouter.post("/quizzes", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => res.status(201).json(await prisma.quiz.create({ data: req.body }))));
 lmsRouter.post("/certificates", requirePermission("certificates.issue"), asyncRoute(async (req, res) => res.status(201).json(await prisma.certificate.create({ data: req.body }))));
 lmsRouter.get("/dashboard/:role", asyncRoute(async (req, res) => res.json({ role: req.params.role, modules: ["courses", "attendance", "recordings", "assignments", "quizzes", "certificates", "notifications"] })));

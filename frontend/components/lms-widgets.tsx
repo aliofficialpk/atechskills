@@ -12,6 +12,36 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function refreshSession() {
+  const refreshToken = localStorage.getItem("atechskills_refresh_token");
+  if (!refreshToken) return false;
+  const response = await fetch(`${apiBase}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken })
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  if (data.accessToken) localStorage.setItem("atechskills_access_token", data.accessToken);
+  if (data.refreshToken) localStorage.setItem("atechskills_refresh_token", data.refreshToken);
+  if (data.user) localStorage.setItem("atechskills_user", JSON.stringify(data.user));
+  window.dispatchEvent(new Event("atechskills:auth-changed"));
+  return Boolean(data.accessToken);
+}
+
+async function authedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  Object.entries(authHeaders()).forEach(([key, value]) => headers.set(key, value));
+  const withAuth = { ...init, headers };
+  let response = await fetch(input, withAuth);
+  if (response.status === 401 && await refreshSession()) {
+    const retryHeaders = new Headers(init.headers);
+    Object.entries(authHeaders()).forEach(([key, value]) => retryHeaders.set(key, value));
+    response = await fetch(input, { ...init, headers: retryHeaders });
+  }
+  return response;
+}
+
 type ApiState<T> = {
   data?: T;
   error?: string;
@@ -49,6 +79,7 @@ function studentDashboardMetrics(data: any) {
   const attendance = asArray(student?.attendance);
   const present = attendance.filter((item: any) => item.status === "PRESENT").length;
   const assignments = uniqueById(courses.flatMap((course: any) => asArray(course.assignments)));
+  const submittedAssignments = assignments.filter((assignment: any) => asArray(assignment.submissions).length > 0).length;
   const recordings = uniqueById(courses.flatMap((course: any) => asArray(course.recordings).concat(asArray(course.sessions).map((session: any) => session.recording).filter(Boolean))));
   const certificates = asArray(student?.certificates);
   const sections = courses.flatMap((course: any) => asArray(course.sections));
@@ -62,12 +93,13 @@ function studentDashboardMetrics(data: any) {
     attendance,
     present,
     assignments,
+    submittedAssignments,
     recordings,
     certificates,
     notifications: asArray(data?.notifications),
     progress: lessons.length ? percent(certificates.length + present + activeEnrollments.length, lessons.length + sessions.length + enrollments.length) : activeEnrollments.length ? 10 : 0,
     attendancePercent: percent(present, sessions.length),
-    assignmentText: assignments.length ? `0/${assignments.length}` : "0",
+    assignmentText: assignments.length ? `${submittedAssignments}/${assignments.length}` : "0",
     certificateCount: certificates.length
   };
 }
@@ -81,7 +113,7 @@ export function StudentPortalDashboard() {
   async function load() {
     setState({ loading: true });
     try {
-      const response = await fetch(`${apiBase}/lms/me`, { headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/lms/me`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load dashboard");
       setState({ data, loading: false });
@@ -96,7 +128,7 @@ export function StudentPortalDashboard() {
       return;
     }
     try {
-      const response = await fetch(`${apiBase}/lms/live-sessions/${sessionId}/${action}`, { method: "POST", headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/lms/live-sessions/${sessionId}/${action}`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Live class action failed");
       if (action === "join" && data.meetingUrl) window.open(data.meetingUrl, "_blank", "noopener,noreferrer");
@@ -152,7 +184,7 @@ export function StudentPortalDashboard() {
               <div className="grid gap-4 md:grid-cols-4">
                 <Card className="p-5"><p className="text-sm text-slate-500">Course Progress</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.progress}%</p><p className="mt-1 text-xs text-slate-500">{metrics.activeEnrollments.length} active / {metrics.pendingEnrollments.length} pending</p></Card>
                 <Card className="p-5"><p className="text-sm text-slate-500">Attendance</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.attendancePercent}%</p><p className="mt-1 text-xs text-slate-500">{metrics.present}/{metrics.sessions.length} scheduled sessions present</p></Card>
-                <Card className="p-5"><p className="text-sm text-slate-500">Assignments</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.assignmentText}</p><p className="mt-1 text-xs text-slate-500">{metrics.assignments.length ? "Submissions will update after grading is enabled" : "No assignments assigned yet"}</p></Card>
+                <Card className="p-5"><p className="text-sm text-slate-500">Assignments</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.assignmentText}</p><p className="mt-1 text-xs text-slate-500">{metrics.assignments.length ? "Submitted assignments / total assigned" : "No assignments assigned yet"}</p></Card>
                 <Card className="p-5"><p className="text-sm text-slate-500">Certificates</p><p className="mt-2 text-3xl font-black text-brand-green">{metrics.certificateCount}</p><p className="mt-1 text-xs text-slate-500">{metrics.certificateCount ? "Issued certificates available" : "No certificates issued yet"}</p></Card>
               </div>
 
@@ -184,7 +216,7 @@ export function StudentPortalDashboard() {
 
               {activeTab === "courses" && <StudentCoursesPanel enrollments={metrics.enrollments} reload={load} />}
               {activeTab === "attendance" && <StudentAttendancePanel attendance={metrics.attendance} sessions={metrics.sessions} />}
-              {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} />}
+              {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} reload={load} />}
               {activeTab === "live" && <StudentLivePanel sessions={metrics.sessions} sessionId={sessionId} setSessionId={setSessionId} liveAction={liveAction} message={liveMessage} />}
               {activeTab === "recordings" && <StudentRecordingsPanel recordings={metrics.recordings} />}
               {activeTab === "certificates" && <StudentCertificatesPanel certificates={metrics.certificates} />}
@@ -259,8 +291,81 @@ function StudentAttendancePanel({ attendance, sessions }: { attendance: any[]; s
   );
 }
 
-function StudentAssignmentsPanel({ assignments }: { assignments: any[] }) {
-  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Assignments</h2><div className="mt-5 grid gap-3">{assignments.length === 0 && <p className="text-sm text-slate-500">No assignments have been added to your enrolled courses yet.</p>}{assignments.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.description ?? "Assignment details will appear here."}</p><p className="mt-2 text-xs text-slate-500">Due: {formatDateTime(item.dueAt)}</p></div>)}</div></Card>;
+function StudentAssignmentsPanel({ assignments, reload }: { assignments: any[]; reload: () => void }) {
+  const [message, setMessage] = useState("");
+  const [uploadingId, setUploadingId] = useState("");
+
+  async function submitAssignment(event: React.FormEvent<HTMLFormElement>, assignmentId: string) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const file = values.get("file") as File | null;
+    if (!file || file.type !== "application/pdf") {
+      setMessage("Please upload your assignment as a PDF file.");
+      return;
+    }
+    setUploadingId(assignmentId);
+    setMessage("");
+    try {
+      const response = await authedFetch(`${apiBase}/lms/assignments/${assignmentId}/submit`, {
+        method: "POST",
+        body: values
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Assignment upload failed");
+      form.reset();
+      setMessage("Assignment submitted successfully. Your teacher can now review it.");
+      reload();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Assignment upload failed");
+    } finally {
+      setUploadingId("");
+    }
+  }
+
+  return (
+    <Card className="mt-6 p-6">
+      <h2 className="text-xl font-bold">Assignments</h2>
+      <p className="mt-2 text-sm text-slate-600">Upload your completed work as a PDF. Each submission is attached to your logged-in student account.</p>
+      {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      <div className="mt-5 grid gap-4">
+        {assignments.length === 0 && <p className="text-sm text-slate-500">No assignments have been added to your enrolled courses yet.</p>}
+        {assignments.map((item) => {
+          const latestSubmission = asArray(item.submissions)[0];
+          return (
+            <div key={item.id} className="rounded-md border border-slate-200 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold">{item.title}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{item.description ?? "Assignment details will appear here."}</p>
+                  <p className="mt-2 text-xs text-slate-500">Due: {formatDateTime(item.dueAt)}</p>
+                </div>
+                <Badge>{latestSubmission ? latestSubmission.score === null || latestSubmission.score === undefined ? "Submitted" : `Score ${latestSubmission.score}` : "Pending"}</Badge>
+              </div>
+              {latestSubmission && (
+                <div className="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-brand-green">
+                  Submitted {formatDateTime(latestSubmission.submittedAt)}. {latestSubmission.feedback ? `Feedback: ${latestSubmission.feedback}` : "Feedback will appear after grading."}
+                </div>
+              )}
+              <form onSubmit={(event) => submitAssignment(event, item.id)} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  PDF file
+                  <input required type="file" name="file" accept="application/pdf" className="rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-green" />
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  Notes
+                  <input name="answer" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" placeholder="Optional message for your teacher" />
+                </label>
+                <button disabled={uploadingId === item.id} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                  {uploadingId === item.id ? "Uploading..." : "Submit PDF"}
+                </button>
+              </form>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
 }
 
 function StudentLivePanel({ sessions, sessionId, setSessionId, liveAction, message }: { sessions: any[]; sessionId: string; setSessionId: (id: string) => void; liveAction: (action: "join" | "heartbeat" | "leave") => void; message: string }) {
@@ -302,7 +407,7 @@ export function StudentLearningCenter() {
   async function load() {
     setState({ loading: true });
     try {
-      const response = await fetch(`${apiBase}/lms/me`, { headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/lms/me`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load dashboard");
       setState({ data, loading: false });
@@ -317,7 +422,7 @@ export function StudentLearningCenter() {
       return;
     }
     try {
-      const response = await fetch(`${apiBase}/lms/live-sessions/${sessionId}/${action}`, { method: "POST", headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/lms/live-sessions/${sessionId}/${action}`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Live class action failed");
       setLiveMessage(action === "join" ? "Class joined. Keep the tab active so progress can be tracked." : data.eligible ? "Attendance marked automatically." : "Progress updated. Attendance marks after half the class time.");
@@ -428,7 +533,7 @@ function tabId(value: string) {
 
 export function SecureRoleDashboard({ role }: { role: PortalRole }) {
   const tabs = role === "admin"
-    ? ["Overview", "Courses", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
+    ? ["Overview", "Courses", "Students", "Course Enrollments", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
     : portalCards[role].slice(0, 8);
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
@@ -506,12 +611,12 @@ export function SecureRoleDashboard({ role }: { role: PortalRole }) {
 }
 
 function RoleTabbedPanel({ role, activeTab, dashboard }: { role: "teacher" | "services"; activeTab: string; dashboard: any }) {
+  if (role === "teacher") return <TeacherWorkspace activeTab={activeTab} />;
   return (
     <div className="grid gap-6">
       <div className="grid gap-4 md:grid-cols-4">
         {dashboard.kpis.map((item: any) => <Card key={item.label} className="p-5"><p className="text-sm text-slate-500">{item.label}</p><p className="mt-2 text-3xl font-black text-brand-green">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.caption}</p></Card>)}
       </div>
-      {role === "teacher" && <TeacherWorkspace activeTab={activeTab} />}
       {role === "services" && <ServicesWorkspace activeTab={activeTab} />}
     </div>
   );
@@ -519,6 +624,8 @@ function RoleTabbedPanel({ role, activeTab, dashboard }: { role: "teacher" | "se
 
 function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
   if (activeTab === "Courses") return <AdminCourseManager />;
+  if (activeTab === "Students") return <AdminStudentsPanel />;
+  if (activeTab === "Course Enrollments") return <AdminCourseEnrollmentPanel />;
   if (activeTab === "Instructors") return <AdminMentorManager />;
   if (activeTab === "Payments") return <AdminEnrollmentQueue />;
   if (activeTab === "Live Classes") return <AdminScheduleForm />;
@@ -537,31 +644,181 @@ function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
 
 function TeacherWorkspace({ activeTab }: { activeTab: string }) {
   const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+
+  async function load() {
+    setState({ loading: true });
+    try {
+      const response = await authedFetch(`${apiBase}/lms/teacher/courses`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load assigned courses");
+      setState({ loading: false, data });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load assigned courses" });
+    }
+  }
+
+  async function gradeSubmission(event: React.FormEvent<HTMLFormElement>, submissionId: string) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const response = await authedFetch(`${apiBase}/lms/submissions/${submissionId}/grade`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to save grade");
+      load();
+    } catch (error) {
+      setState((current) => ({ ...current, error: error instanceof Error ? error.message : "Unable to save grade" }));
+    }
+  }
+
   useEffect(() => {
-    fetch(`${apiBase}/lms/teacher/courses`, { headers: authHeaders() })
-      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-      .then(({ ok, data }) => {
-        if (!ok) throw new Error(data.error ?? "Unable to load assigned courses");
-        setState({ loading: false, data });
-      })
-      .catch((error) => setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load assigned courses" }));
+    load();
   }, []);
+
   const courses = asArray(state.data);
+  const sessions = courses.flatMap((course) => asArray(course.sessions).map((session: any) => ({ ...session, course })));
+  const assignments = courses.flatMap((course) => asArray(course.assignments).map((assignment: any) => ({ ...assignment, course })));
+  const submissions = assignments.flatMap((assignment: any) => asArray(assignment.submissions).map((submission: any) => ({ ...submission, assignment })));
+  const enrollments = courses.flatMap((course) => asArray(course.enrollments).map((enrollment: any) => ({ ...enrollment, course })));
+  const activeStudents = enrollments.filter((item: any) => item.status === "ACTIVE");
+
+  function renderContent() {
+    if (activeTab === "Assigned Courses") {
+      return courses.map((course) => <div key={course.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">{course.title}</h3><Badge>{course.status}</Badge></div><p className="mt-1 text-sm text-slate-600">{course.summary}</p><p className="mt-2 text-xs text-slate-500">{asArray(course.enrollments).length} enrollments - {asArray(course.sections).length} sections - {asArray(course.sessions).length} sessions</p></div>);
+    }
+    if (activeTab === "Live Classes") {
+      return sessions.map((session: any) => <div key={session.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">{session.title}</h3><Badge>{session.status}</Badge></div><p className="mt-1 text-sm text-slate-600">{session.course.title} - {formatDateTime(session.startsAt)} - {session.expectedDurationMinutes} minutes</p><p className="mt-2 text-xs text-slate-500">{asArray(session.presences).length} joined - {asArray(session.attendance).filter((item: any) => item.status === "PRESENT").length} present</p></div>);
+    }
+    if (activeTab === "Mark Attendance") {
+      return sessions.map((session: any) => <div key={session.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">{session.title}</h3><p className="mt-1 text-sm text-slate-600">{session.course.title} - auto attendance threshold {session.attendanceThresholdPercent}%</p></div><button onClick={async () => { await authedFetch(`${apiBase}/lms/live-sessions/${session.id}/finalize-attendance`, { method: "POST" }); load(); }} className="rounded-md bg-brand-green px-4 py-2 text-sm font-semibold text-white">Finalize</button></div></div>);
+    }
+    if (activeTab === "Grade Assignments") {
+      return submissions.map((submission: any) => <div key={submission.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{submission.assignment.title}</h3><p className="mt-1 text-sm text-slate-600">{submission.user?.name ?? submission.user?.email} - {submission.assignment.course.title}</p><p className="mt-1 text-xs text-slate-500">Submitted {formatDateTime(submission.submittedAt)}</p></div>{submission.fileUrl && <a href={submission.fileUrl} target="_blank" className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green">Open PDF</a>}</div><form onSubmit={(event) => gradeSubmission(event, submission.id)} className="mt-4 grid gap-3 md:grid-cols-[140px_1fr_auto] md:items-end"><label className="grid gap-2 text-sm font-medium text-slate-700">Score<input name="score" type="number" min="0" max={submission.assignment.maxScore ?? 100} defaultValue={submission.score ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label><label className="grid gap-2 text-sm font-medium text-slate-700">Feedback<input name="feedback" defaultValue={submission.feedback ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label><button className="rounded-md bg-brand-green px-4 py-3 text-sm font-semibold text-white">Save Grade</button></form></div>);
+    }
+    if (activeTab === "Student Performance") {
+      return activeStudents.map((enrollment: any) => <div key={enrollment.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{enrollment.student?.user?.name ?? enrollment.student?.user?.email}</h3><p className="mt-1 text-sm text-slate-600">{enrollment.course.title}</p><p className="mt-2 text-xs text-slate-500">{asArray(enrollment.student?.attendance).length} attendance records - {Math.round(asArray(enrollment.student?.presences).reduce((sum: number, item: any) => sum + item.totalSeconds, 0) / 60)} live minutes - {asArray(enrollment.student?.certificates).length} certificates</p></div>);
+    }
+    return assignments.map((assignment: any) => <div key={assignment.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{assignment.title}</h3><p className="mt-1 text-sm text-slate-600">{assignment.course.title} - Due {formatDateTime(assignment.dueAt)}</p><p className="mt-2 text-xs text-slate-500">{asArray(assignment.submissions).length} submissions received</p></div>);
+  }
+
   return (
-    <Card className="p-6">
-      <h2 className="text-xl font-bold">{activeTab}</h2>
+    <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="p-5"><p className="text-sm text-slate-500">Assigned Courses</p><p className="mt-2 text-3xl font-black text-brand-green">{courses.length}</p><p className="mt-1 text-xs text-slate-500">Courses under your account</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Active Students</p><p className="mt-2 text-3xl font-black text-brand-green">{activeStudents.length}</p><p className="mt-1 text-xs text-slate-500">Verified enrollments</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Live Sessions</p><p className="mt-2 text-3xl font-black text-brand-green">{sessions.length}</p><p className="mt-1 text-xs text-slate-500">Scheduled and completed</p></Card>
+        <Card className="p-5"><p className="text-sm text-slate-500">Submissions</p><p className="mt-2 text-3xl font-black text-brand-green">{submissions.length}</p><p className="mt-1 text-xs text-slate-500">Assignments received</p></Card>
+      </div>
+      <Card className="p-6">
+        <h2 className="text-xl font-bold">{activeTab}</h2>
       {state.loading && <p className="mt-4 text-sm text-slate-500">Loading assigned teaching workspace...</p>}
       {state.error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
       {!state.loading && !state.error && courses.length === 0 && <p className="mt-4 text-sm text-slate-500">No courses assigned yet. Admin can assign courses from the admin dashboard.</p>}
       <div className="mt-5 grid gap-3">
-        {courses.map((course) => <div key={course.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{course.title}</h3><p className="mt-1 text-sm text-slate-600">{course.enrollments?.length ?? 0} students - {course.sessions?.length ?? 0} live sessions - {course.assignments?.length ?? 0} assignments</p></div>)}
+        {!state.loading && !state.error && courses.length > 0 && renderContent()}
+        {!state.loading && !state.error && courses.length > 0 && renderContent().length === 0 && <p className="text-sm text-slate-500">No records available for this tab yet.</p>}
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
 function ServicesWorkspace({ activeTab }: { activeTab: string }) {
   return <Card className="p-6"><h2 className="text-xl font-bold">{activeTab}</h2><p className="mt-2 text-sm text-slate-600">Student Services tools are restricted to support staff accounts. Ticket inbox, student lookup, payment support, and conversation history can be expanded here without exposing admin controls.</p><ButtonLink href="/student-services" className="mt-5">Open Support Form</ButtonLink></Card>;
+}
+
+function AdminStudentsPanel() {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+
+  useEffect(() => {
+    authedFetch(`${apiBase}/lms/admin/students`)
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error ?? "Unable to load students");
+        setState({ loading: false, data });
+      })
+      .catch((error) => setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load students" }));
+  }, []);
+
+  const students = asArray(state.data);
+  return (
+    <Card className="p-6">
+      <h2 className="text-xl font-bold">Students</h2>
+      <p className="mt-2 text-sm text-slate-600">Registered students, contact details, and their course enrollment status.</p>
+      {state.loading && <p className="mt-4 text-sm text-slate-500">Loading students...</p>}
+      {state.error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+      <div className="mt-5 grid gap-3">
+        {!state.loading && students.length === 0 && <p className="text-sm text-slate-500">No student accounts yet.</p>}
+        {students.map((student) => (
+          <div key={student.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{student.name ?? student.email}</h3>
+                <p className="mt-1 text-sm text-slate-600">{student.email}{student.phone ? ` - ${student.phone}` : ""}</p>
+                <p className="mt-1 text-xs text-slate-500">Student ID: {student.studentCode}</p>
+              </div>
+              <Badge>{student.activeEnrollments} active / {student.pendingEnrollments} pending</Badge>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {asArray(student.enrollments).length === 0 && <p className="text-sm text-slate-500">No course enrollments.</p>}
+              {asArray(student.enrollments).map((enrollment: any) => (
+                <div key={enrollment.id} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <span className="font-semibold">{enrollment.course?.title ?? "Course"}</span> - {enrollment.status} / {enrollment.paymentStatus}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AdminCourseEnrollmentPanel() {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+
+  useEffect(() => {
+    authedFetch(`${apiBase}/lms/admin/course-enrollment-summary`)
+      .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error ?? "Unable to load course enrollment summary");
+        setState({ loading: false, data });
+      })
+      .catch((error) => setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load course enrollment summary" }));
+  }, []);
+
+  const courses = asArray(state.data);
+  return (
+    <Card className="p-6">
+      <h2 className="text-xl font-bold">Course Enrollments</h2>
+      <p className="mt-2 text-sm text-slate-600">Student counts by course, including pending and verified enrollment requests.</p>
+      {state.loading && <p className="mt-4 text-sm text-slate-500">Loading course counts...</p>}
+      {state.error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+      <div className="mt-5 grid gap-3">
+        {!state.loading && courses.length === 0 && <p className="text-sm text-slate-500">No courses available yet.</p>}
+        {courses.map((course) => (
+          <div key={course.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{course.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{course.instructor?.user?.name ? `Instructor: ${course.instructor.user.name}` : "No instructor assigned"}</p>
+              </div>
+              <Badge>{course.enrollmentCount} total</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <div className="rounded-md bg-emerald-50 p-3 text-sm text-brand-green"><p className="font-black">{course.activeCount}</p><p>Active</p></div>
+              <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-700"><p className="font-black">{course.pendingCount}</p><p>Pending</p></div>
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700"><p className="font-black">{course.rejectedCount}</p><p>Rejected</p></div>
+              <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-700"><p className="font-black">{course.sessionsCount}</p><p>Sessions</p></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
 }
 
 export function AdminControlCenter() {
@@ -598,9 +855,9 @@ function AdminCourseManager() {
     setLoading(true);
     try {
       const [courseResponse, teacherResponse, categoryResponse] = await Promise.all([
-        fetch(`${apiBase}/admin-courses`, { headers: authHeaders() }),
-        fetch(`${apiBase}/admin-teachers`, { headers: authHeaders() }),
-        fetch(`${apiBase}/admin-categories`, { headers: authHeaders() })
+        authedFetch(`${apiBase}/admin-courses`),
+        authedFetch(`${apiBase}/admin-teachers`),
+        authedFetch(`${apiBase}/admin-categories`)
       ]);
       const courseData = await courseResponse.json();
       const teacherData = await teacherResponse.json();
@@ -654,9 +911,8 @@ function AdminCourseManager() {
     const thumbnail = raw.get("thumbnail");
     if (thumbnail instanceof File && thumbnail.size > 0) payload.set("thumbnail", thumbnail);
     try {
-      const response = await fetch(`${apiBase}/admin-courses`, {
+      const response = await authedFetch(`${apiBase}/admin-courses`, {
         method: "POST",
-        headers: authHeaders(),
         body: payload
       });
       const data = await response.json();
@@ -671,7 +927,7 @@ function AdminCourseManager() {
 
   async function publish(id: string) {
     try {
-      const response = await fetch(`${apiBase}/admin-courses`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "PUBLISH", courseId: id }) });
+      const response = await authedFetch(`${apiBase}/admin-courses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "PUBLISH", courseId: id }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to publish course");
       setMessage(`Published: ${data.title}`);
@@ -683,7 +939,7 @@ function AdminCourseManager() {
 
   async function archive(id: string) {
     try {
-      const response = await fetch(`${apiBase}/admin-courses`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "ARCHIVE", courseId: id }) });
+      const response = await authedFetch(`${apiBase}/admin-courses`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ARCHIVE", courseId: id }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to archive course");
       setMessage(`Archived: ${data.title}`);
@@ -696,9 +952,9 @@ function AdminCourseManager() {
   async function assignTeacher(courseId: string, teacherId: string) {
     if (!teacherId) return;
     try {
-      const response = await fetch(`${apiBase}/admin-courses`, {
+      const response = await authedFetch(`${apiBase}/admin-courses`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "ASSIGN_TEACHER", courseId, teacherId })
       });
       const data = await response.json();
@@ -811,9 +1067,9 @@ function AdminCategoryManager({ onSaved }: { onSaved: () => void }) {
     const form = event.currentTarget;
     const raw = Object.fromEntries(new FormData(form).entries());
     try {
-      const response = await fetch(`${apiBase}/admin-categories`, {
+      const response = await authedFetch(`${apiBase}/admin-categories`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: raw.name, slug: raw.slug || undefined })
       });
       const data = await response.json();
@@ -849,7 +1105,7 @@ function AdminMentorManager() {
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch(`${apiBase}/admin-teachers`, { headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/admin-teachers`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load instructors");
       setTeachers(asArray(data).filter((teacher) => teacher.user?.isActive !== false));
@@ -865,9 +1121,9 @@ function AdminMentorManager() {
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
     try {
-      const response = await fetch(`${apiBase}/admin-teachers`, {
+      const response = await authedFetch(`${apiBase}/admin-teachers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -883,7 +1139,7 @@ function AdminMentorManager() {
   async function deactivate(id: string) {
     if (!confirm("Deactivate this instructor account and unassign it from courses?")) return;
     try {
-      const response = await fetch(`${apiBase}/admin-teachers/${id}`, { method: "DELETE", headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/admin-teachers/${id}`, { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to deactivate instructor");
       setMessage(`Deactivated instructor: ${data.email}`);
@@ -938,7 +1194,7 @@ function AdminOpportunityManager() {
   async function load() {
     setState({ loading: true });
     try {
-      const response = await fetch(`${apiBase}/admin/opportunities`, { headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/admin/opportunities`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load opportunities");
       setState({ loading: false, data });
@@ -970,9 +1226,9 @@ function AdminOpportunityManager() {
       isFeatured: raw.isFeatured === "on"
     };
     try {
-      const response = await fetch(`${apiBase}/admin/opportunities`, {
+      const response = await authedFetch(`${apiBase}/admin/opportunities`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -987,7 +1243,7 @@ function AdminOpportunityManager() {
 
   async function publish(id: string) {
     try {
-      const response = await fetch(`${apiBase}/admin/opportunities/${id}/publish`, { method: "PATCH", headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/admin/opportunities/${id}/publish`, { method: "PATCH" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to publish opportunity");
       setMessage(`Published: ${data.title}`);
@@ -1074,9 +1330,9 @@ function AdminStaffForm() {
     const form = event.currentTarget;
     const payload = Object.fromEntries(new FormData(form).entries());
     try {
-      const response = await fetch(`${apiBase}/admin/staff`, {
+      const response = await authedFetch(`${apiBase}/admin/staff`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -1115,7 +1371,7 @@ function AdminScheduleForm() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`${apiBase}/admin-courses`, { headers: authHeaders() }).then((response) => response.json()).then((data) => setCourses(asArray(data))).catch(() => setCourses([]));
+    authedFetch(`${apiBase}/admin-courses`).then((response) => response.json()).then((data) => setCourses(asArray(data))).catch(() => setCourses([]));
   }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -1135,9 +1391,9 @@ function AdminScheduleForm() {
       freeAccess: raw.freeAccess === "on"
     };
     try {
-      const response = await fetch(`${apiBase}/lms/live-sessions/generate`, {
+      const response = await authedFetch(`${apiBase}/lms/live-sessions/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -1181,7 +1437,7 @@ function AdminEnrollmentQueue() {
   async function load() {
     setState({ loading: true });
     try {
-      const response = await fetch(`${apiBase}/admin-enrollments`, { headers: authHeaders() });
+      const response = await authedFetch(`${apiBase}/admin-enrollments`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Unable to load requests");
       setState({ loading: false, data });
@@ -1192,9 +1448,9 @@ function AdminEnrollmentQueue() {
 
   async function review(id: string, action: "verify" | "reject") {
     try {
-      const response = await fetch(`${apiBase}/admin-enrollments`, {
+      const response = await authedFetch(`${apiBase}/admin-enrollments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enrollmentId: id, action: action === "verify" ? "APPROVE" : "REJECT", adminNote: action === "verify" ? "Payment approved." : "Please upload a clearer proof." })
       });
       const data = await response.json();
@@ -1240,7 +1496,7 @@ function AdminPerformancePanel() {
   const [state, setState] = useState<ApiState<any[]>>({ loading: true });
 
   useEffect(() => {
-    fetch(`${apiBase}/lms/admin/student-performance`, { headers: authHeaders() })
+    authedFetch(`${apiBase}/lms/admin/student-performance`)
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (!ok) throw new Error(data.error ?? "Unable to load performance");
@@ -1252,7 +1508,7 @@ function AdminPerformancePanel() {
   return (
     <Card className="p-6">
       <h2 className="text-xl font-bold">Student Performance</h2>
-      <p className="mt-2 text-sm text-slate-600">Admin visibility into each learner’s course access, attendance, quiz average, certificate count, and live minutes.</p>
+      <p className="mt-2 text-sm text-slate-600">Admin visibility into each learner's course access, attendance, quiz average, certificate count, and live minutes.</p>
       <div className="mt-5 grid gap-3">
         {state.loading && <p className="text-sm text-slate-500">Loading performance...</p>}
         {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}

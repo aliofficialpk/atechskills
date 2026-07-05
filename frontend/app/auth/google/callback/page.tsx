@@ -31,6 +31,7 @@ export default function GoogleAuthCallbackPage() {
     localStorage.setItem("atechskills_access_token", accessToken);
     if (refreshToken) localStorage.setItem("atechskills_refresh_token", refreshToken);
     localStorage.setItem("atechskills_user", user);
+    window.dispatchEvent(new Event("atechskills:auth-changed"));
     window.history.replaceState(null, "", "/auth/google/callback");
     setMessage("Google sign-in complete. Redirecting to your dashboard.");
     setTimeout(() => router.replace(returnTo), 500);

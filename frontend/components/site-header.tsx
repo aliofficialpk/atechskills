@@ -3,8 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Search, X } from "lucide-react";
-import { useState } from "react";
+import { LogOut, Menu, Search, UserCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { navItems } from "@/lib/data";
 import { ButtonLink } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,44 @@ import { cn } from "@/lib/utils";
 export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
+
+  function readUser() {
+    try {
+      const raw = localStorage.getItem("atechskills_user");
+      setUser(raw ? JSON.parse(raw) : null);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  function dashboardForRoles(roles: string[] = []) {
+    if (roles.some((role) => ["Super Admin", "Admin"].includes(role))) return "/admin-dashboard";
+    if (roles.includes("Teacher")) return "/teacher-dashboard";
+    if (roles.includes("Student Services")) return "/student-services-dashboard";
+    return "/student-dashboard";
+  }
+
+  function logout() {
+    localStorage.removeItem("atechskills_access_token");
+    localStorage.removeItem("atechskills_refresh_token");
+    localStorage.removeItem("atechskills_user");
+    setUser(null);
+    setOpen(false);
+    window.dispatchEvent(new Event("atechskills:auth-changed"));
+  }
+
+  useEffect(() => {
+    readUser();
+    window.addEventListener("storage", readUser);
+    window.addEventListener("atechskills:auth-changed", readUser);
+    return () => {
+      window.removeEventListener("storage", readUser);
+      window.removeEventListener("atechskills:auth-changed", readUser);
+    };
+  }, []);
+
+  const dashboardHref = dashboardForRoles(user?.roles ?? []);
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -30,8 +68,21 @@ export function SiteHeader() {
           <Link href="/daily-insights?search=open" aria-label="Search" className="focus-ring rounded-md p-2 text-slate-700 hover:bg-slate-100">
             <Search size={21} />
           </Link>
-          <ButtonLink href="/login" variant="secondary" className="min-h-10 px-4 py-2">Login</ButtonLink>
-          <ButtonLink href="/register" className="min-h-10 px-4 py-2">Get Started</ButtonLink>
+          {user ? (
+            <>
+              <ButtonLink href={dashboardHref} variant="secondary" className="min-h-10 px-4 py-2">
+                <UserCircle size={17} /> {user.name ?? "Profile"}
+              </ButtonLink>
+              <button onClick={logout} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50">
+                <LogOut size={16} /> Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <ButtonLink href="/login" variant="secondary" className="min-h-10 px-4 py-2">Login</ButtonLink>
+              <ButtonLink href="/register" className="min-h-10 px-4 py-2">Get Started</ButtonLink>
+            </>
+          )}
         </div>
         <button className="focus-ring rounded-md p-2 lg:hidden" onClick={() => setOpen((value) => !value)} aria-label="Toggle navigation">
           {open ? <X /> : <Menu />}
@@ -45,10 +96,19 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))}
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <ButtonLink href="/login" variant="secondary">Login</ButtonLink>
-              <ButtonLink href="/register">Get Started</ButtonLink>
-            </div>
+            {user ? (
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <ButtonLink href={dashboardHref} variant="secondary">Open Dashboard</ButtonLink>
+                <button onClick={logout} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">
+                  <LogOut size={16} /> Logout
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <ButtonLink href="/login" variant="secondary">Login</ButtonLink>
+                <ButtonLink href="/register">Get Started</ButtonLink>
+              </div>
+            )}
           </div>
         </div>
       )}

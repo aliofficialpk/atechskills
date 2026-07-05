@@ -110,7 +110,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Request failed");
       if (data.accessToken) localStorage.setItem("atechskills_access_token", data.accessToken);
+      if (data.refreshToken) localStorage.setItem("atechskills_refresh_token", data.refreshToken);
       if (data.user) localStorage.setItem("atechskills_user", JSON.stringify(data.user));
+      window.dispatchEvent(new Event("atechskills:auth-changed"));
       setStatus("success");
       setMessage(isRecovery ? "Password recovery instructions are queued." : "Access granted. Redirecting to your dashboard.");
       form.reset();

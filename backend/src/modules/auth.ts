@@ -5,7 +5,7 @@ import { z } from "zod";
 import { env } from "../config.js";
 import { asyncRoute } from "../lib/async-route.js";
 import { prisma, withDbRetry } from "../lib/prisma.js";
-import { signAccessToken, signRefreshToken } from "../lib/tokens.js";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/tokens.js";
 import { validate } from "../middleware/validate.js";
 
 export const authRouter = Router();
@@ -206,4 +206,27 @@ authRouter.get("/google/callback", asyncRoute(async (req, res) => {
 }));
 
 authRouter.post("/forgot-password", (_req, res) => res.json({ message: "Password recovery email queued when SMTP is configured." }));
-authRouter.post("/refresh", (_req, res) => res.json({ message: "Refresh token endpoint ready for cookie-backed production flow." }));
+authRouter.post("/refresh", asyncRoute(async (req, res) => {
+  const refreshToken = String(req.body?.refreshToken ?? "");
+  if (!refreshToken) return res.status(400).json({ error: "Refresh token is required." });
+
+  let claims: Pick<ReturnType<typeof verifyRefreshToken>, "id" | "email">;
+  try {
+    claims = verifyRefreshToken(refreshToken);
+  } catch {
+    return res.status(401).json({ error: "Session expired. Please login again." });
+  }
+
+  const user = await withDbRetry(() => prisma.user.findUnique({
+    where: { id: claims.id },
+    include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } }
+  }), 3);
+  if (!user || !user.isActive || user.email !== claims.email) return res.status(401).json({ error: "Session expired. Please login again." });
+
+  const { roles, permissions } = getAccessClaims(user.roles);
+  res.json({
+    user: { id: user.id, email: user.email, name: user.name, roles },
+    accessToken: signAccessToken({ id: user.id, email: user.email, roles, permissions }),
+    refreshToken: signRefreshToken({ id: user.id, email: user.email })
+  });
+}));
