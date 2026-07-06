@@ -229,7 +229,7 @@ export const roleDashboards = {
       { label: "Total Students", value: "5K+", caption: "All-time platform learners" },
       { label: "Active Courses", value: "100+", caption: "Published and cohort-based" },
       { label: "Open Tickets", value: "18", caption: "Student services queue" },
-      { label: "Revenue", value: "$42K", caption: "Current month overview" }
+      { label: "Revenue", value: "42K", caption: "Current month overview" }
     ],
     primaryTitle: "Platform Operations",
     primaryText: "Manage courses, paid enrollment verification, staff credentials, scheduled live classes, attendance, content, roles, events, tickets, certificates, and audit-ready activity.",
