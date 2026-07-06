@@ -20,9 +20,9 @@ const upload = multer({
 
 const assignmentUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    cb(null, file.mimetype === "application/pdf");
+    cb(null, file.mimetype === "application/pdf" || file.mimetype.startsWith("video/"));
   }
 });
 
@@ -251,7 +251,7 @@ async function ensureSubmissionFileTable() {
   `);
 }
 
-async function storeSubmissionPdf(submissionId: string, file: Express.Multer.File) {
+async function storeSubmissionFile(submissionId: string, file: Express.Multer.File) {
   await ensureSubmissionFileTable();
   await prisma.$executeRaw`
     INSERT INTO submission_files (submission_id, file_name, mime_type, file_size, data)
@@ -830,30 +830,33 @@ lmsRouter.post("/assignments", requireRole("Teacher", "Admin", "Super Admin"), a
 lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
   const assignment = await prisma.assignment.findUnique({ where: { id: String(req.params.id) }, include: { course: true } });
   if (!assignment) return res.status(404).json({ error: "Assignment not found" });
-  if (!req.file) return res.status(400).json({ error: "PDF assignment file is required." });
+  if (!req.file) return res.status(400).json({ error: "PDF or video assignment file is required." });
 
   const student = await ensureStudentForUser(req.user!.id);
   const enrollment = await prisma.enrollment.findUnique({ where: { studentId_courseId: { studentId: student.id, courseId: assignment.courseId } } });
   if (!enrollment || enrollment.status !== "ACTIVE") return res.status(403).json({ error: "Active enrollment is required before submitting this assignment." });
 
-  const uploadResult = await uploadBufferToCloudinary(req.file, "atechskills/assignment-submissions");
   const submission = await prisma.submission.create({
     data: {
       assignmentId: assignment.id,
       userId: req.user!.id,
-      fileUrl: uploadResult.url,
       answer: req.body.answer ? String(req.body.answer) : undefined
     },
     include: { assignment: { include: { course: true } }, user: true }
   });
-  await storeSubmissionPdf(submission.id, req.file);
-  res.status(201).json(submission);
+  await storeSubmissionFile(submission.id, req.file);
+  const updatedSubmission = await prisma.submission.update({
+    where: { id: submission.id },
+    data: { fileUrl: `/api/v1/lms/submissions/${submission.id}/download` },
+    include: { assignment: { include: { course: true } }, user: true }
+  });
+  res.status(201).json(updatedSubmission);
 }));
 
 lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: String(req.params.courseId) } });
   if (!course) return res.status(404).json({ error: "Course not found" });
-  if (!req.file) return res.status(400).json({ error: "PDF assignment file is required." });
+  if (!req.file) return res.status(400).json({ error: "PDF or video assignment file is required." });
 
   const student = await ensureStudentForUser(req.user!.id);
   const enrollment = await prisma.enrollment.findUnique({ where: { studentId_courseId: { studentId: student.id, courseId: course.id } } });
@@ -871,18 +874,21 @@ lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), a
     }
   });
 
-  const uploadResult = await uploadBufferToCloudinary(req.file, "atechskills/assignment-submissions");
   const submission = await prisma.submission.create({
     data: {
       assignmentId: assignment.id,
       userId: req.user!.id,
-      fileUrl: uploadResult.url,
       answer: req.body.answer ? String(req.body.answer) : undefined
     },
     include: { assignment: { include: { course: true } }, user: true }
   });
-  await storeSubmissionPdf(submission.id, req.file);
-  res.status(201).json(submission);
+  await storeSubmissionFile(submission.id, req.file);
+  const updatedSubmission = await prisma.submission.update({
+    where: { id: submission.id },
+    data: { fileUrl: `/api/v1/lms/submissions/${submission.id}/download` },
+    include: { assignment: { include: { course: true } }, user: true }
+  });
+  res.status(201).json(updatedSubmission);
 }));
 
 lmsRouter.get("/submissions/:id/download", requireRole("Teacher", "Admin", "Super Admin", "Student"), asyncRoute(async (req, res) => {
@@ -906,15 +912,35 @@ lmsRouter.get("/submissions/:id/download", requireRole("Teacher", "Admin", "Supe
   `;
   const file = files[0];
   if (!file) {
-    if (submission.fileUrl) return res.redirect(submission.fileUrl);
     return res.status(404).json({ error: "Submission file not found" });
   }
 
   const safeName = file.file_name.replace(/["\r\n]/g, "");
-  res.setHeader("Content-Type", file.mime_type || "application/pdf");
-  res.setHeader("Content-Length", String(file.file_size));
-  res.setHeader("Content-Disposition", `attachment; filename="${safeName || "assignment.pdf"}"`);
-  res.send(file.data);
+  const buffer = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data);
+  const fileSize = buffer.length;
+  const mimeType = file.mime_type || "application/octet-stream";
+  const disposition = mimeType.startsWith("video/") || mimeType === "application/pdf" ? "inline" : "attachment";
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Content-Type", mimeType);
+  res.setHeader("Content-Disposition", `${disposition}; filename="${safeName || "assignment"}"`);
+
+  const range = req.headers.range;
+  if (range && mimeType.startsWith("video/")) {
+    const [startRaw, endRaw] = range.replace(/bytes=/, "").split("-");
+    const start = Number.parseInt(startRaw, 10);
+    const end = endRaw ? Number.parseInt(endRaw, 10) : fileSize - 1;
+    if (Number.isNaN(start) || Number.isNaN(end) || start >= fileSize || end >= fileSize) {
+      res.setHeader("Content-Range", `bytes */${fileSize}`);
+      return res.status(416).end();
+    }
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+    res.setHeader("Content-Length", String(end - start + 1));
+    return res.end(buffer.subarray(start, end + 1));
+  }
+
+  res.setHeader("Content-Length", String(fileSize));
+  res.end(buffer);
 }));
 
 lmsRouter.patch("/submissions/:id/grade", requireRole("Teacher", "Admin", "Super Admin"), asyncRoute(async (req, res) => {

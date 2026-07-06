@@ -296,14 +296,19 @@ function StudentAttendancePanel({ attendance, sessions }: { attendance: any[]; s
 function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { assignments: any[]; activeEnrollments: any[]; reload: () => void }) {
   const [message, setMessage] = useState("");
   const [uploadingId, setUploadingId] = useState("");
+  const maxAssignmentFileSize = 50 * 1024 * 1024;
 
   async function submitAssignment(event: React.FormEvent<HTMLFormElement>, targetId: string, mode: "assignment" | "course" = "assignment") {
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
     const file = values.get("file") as File | null;
-    if (!file || file.type !== "application/pdf") {
-      setMessage("Please upload your assignment as a PDF file.");
+    if (!file || (file.type !== "application/pdf" && !file.type.startsWith("video/"))) {
+      setMessage("Please upload your assignment as a PDF or video file.");
+      return;
+    }
+    if (file.size > maxAssignmentFileSize) {
+      setMessage("Assignment file must be 50MB or smaller.");
       return;
     }
     setUploadingId(`${mode}:${targetId}`);
@@ -329,7 +334,7 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
   return (
     <Card className="mt-6 p-6">
       <h2 className="text-xl font-bold">Assignments</h2>
-      <p className="mt-2 text-sm text-slate-600">Upload your completed work as a PDF. You can submit to a teacher-created assignment or upload general course work for any active enrolled course.</p>
+      <p className="mt-2 text-sm text-slate-600">Upload your completed work as a PDF or video file up to 50MB. You can submit to a teacher-created assignment or upload general course work for any active enrolled course.</p>
       {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
       <div className="mt-5 grid gap-4">
         {activeEnrollments.length === 0 && <p className="text-sm text-slate-500">You need an active enrollment before uploading assignments.</p>}
@@ -344,15 +349,15 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
             </div>
             <form onSubmit={(event) => submitAssignment(event, enrollment.courseId, "course")} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
               <label className="grid gap-2 text-sm font-medium text-slate-700">
-                PDF file
-                <input required type="file" name="file" accept="application/pdf" className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-green" />
+                PDF or video file
+                <input required type="file" name="file" accept="application/pdf,video/*" className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-green" />
               </label>
               <label className="grid gap-2 text-sm font-medium text-slate-700">
                 Notes
                 <input name="answer" className="rounded-md border border-slate-200 bg-white px-3 py-3 outline-none focus:border-brand-green" placeholder="Optional message for your teacher" />
               </label>
               <button disabled={uploadingId === `course:${enrollment.courseId}`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
-                {uploadingId === `course:${enrollment.courseId}` ? "Uploading..." : "Upload Work"}
+                  {uploadingId === `course:${enrollment.courseId}` ? "Uploading..." : "Upload Work"}
               </button>
             </form>
           </div>
@@ -377,8 +382,8 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
               )}
               <form onSubmit={(event) => submitAssignment(event, item.id)} className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
                 <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  PDF file
-                  <input required type="file" name="file" accept="application/pdf" className="rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-green" />
+                  PDF or video file
+                  <input required type="file" name="file" accept="application/pdf,video/*" className="rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-green" />
                 </label>
                 <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Notes
@@ -826,6 +831,8 @@ function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
 
 function TeacherWorkspace({ activeTab }: { activeTab: string }) {
   const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+  const [preview, setPreview] = useState<{ id: string; url: string; type: string } | null>(null);
+  const [openingId, setOpeningId] = useState("");
 
   async function load() {
     setState({ loading: true });
@@ -856,24 +863,35 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
     }
   }
 
-  async function downloadSubmission(submissionId: string) {
+  async function openSubmission(submissionId: string) {
+    setOpeningId(submissionId);
     try {
       const response = await authedFetch(`${apiBase}/lms/submissions/${submissionId}/download`);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Unable to download PDF");
+        throw new Error(data.error ?? "Unable to open assignment file");
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      const type = blob.type || response.headers.get("Content-Type") || "";
+      if (type.startsWith("video/")) {
+        if (preview?.url) URL.revokeObjectURL(preview.url);
+        setPreview({ id: submissionId, url, type });
+        return;
+      }
       const link = document.createElement("a");
       link.href = url;
-      link.download = `assignment-${submissionId}.pdf`;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.download = type === "application/pdf" ? `assignment-${submissionId}.pdf` : `assignment-${submissionId}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (error) {
-      setState((current) => ({ ...current, error: error instanceof Error ? error.message : "Unable to download PDF" }));
+      setState((current) => ({ ...current, error: error instanceof Error ? error.message : "Unable to open assignment file" }));
+    } finally {
+      setOpeningId("");
     }
   }
 
@@ -902,7 +920,29 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
       return sessions.map((session: any) => <div key={session.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">{session.title}</h3><p className="mt-1 text-sm text-slate-600">{session.course.title} - auto attendance threshold {session.attendanceThresholdPercent}%</p></div><button onClick={async () => { await authedFetch(`${apiBase}/lms/live-sessions/${session.id}/finalize-attendance`, { method: "POST" }); load(); }} className="rounded-md bg-brand-green px-4 py-2 text-sm font-semibold text-white">Finalize</button></div></div>);
     }
     if (activeTab === "Grade Assignments") {
-      return submissions.map((submission: any) => <div key={submission.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold">{submission.assignment.title}</h3><p className="mt-1 text-sm text-slate-600">{submission.user?.name ?? submission.user?.email} - {submission.assignment.course.title}</p><p className="mt-1 text-xs text-slate-500">Submitted {formatDateTime(submission.submittedAt)}</p></div><button type="button" onClick={() => downloadSubmission(submission.id)} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green">Download PDF</button></div><form onSubmit={(event) => gradeSubmission(event, submission.id)} className="mt-4 grid gap-3 md:grid-cols-[140px_1fr_auto] md:items-end"><label className="grid gap-2 text-sm font-medium text-slate-700">Score<input name="score" type="number" min="0" max={submission.assignment.maxScore ?? 100} defaultValue={submission.score ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label><label className="grid gap-2 text-sm font-medium text-slate-700">Feedback<input name="feedback" defaultValue={submission.feedback ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label><button className="rounded-md bg-brand-green px-4 py-3 text-sm font-semibold text-white">Save Grade</button></form></div>);
+      return submissions.map((submission: any) => {
+        const activePreview = preview?.id === submission.id ? preview : null;
+        return (
+          <div key={submission.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{submission.assignment.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{submission.user?.name ?? submission.user?.email} - {submission.assignment.course.title}</p>
+                <p className="mt-1 text-xs text-slate-500">Submitted {formatDateTime(submission.submittedAt)}</p>
+              </div>
+              <button type="button" onClick={() => openSubmission(submission.id)} disabled={openingId === submission.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green disabled:opacity-60">
+                {openingId === submission.id ? "Opening..." : "Open File"}
+              </button>
+            </div>
+            {activePreview && <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-black"><video src={activePreview.url} controls className="aspect-video w-full" /></div>}
+            <form onSubmit={(event) => gradeSubmission(event, submission.id)} className="mt-4 grid gap-3 md:grid-cols-[140px_1fr_auto] md:items-end">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">Score<input name="score" type="number" min="0" max={submission.assignment.maxScore ?? 100} defaultValue={submission.score ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">Feedback<input name="feedback" defaultValue={submission.feedback ?? ""} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" /></label>
+              <button className="rounded-md bg-brand-green px-4 py-3 text-sm font-semibold text-white">Save Grade</button>
+            </form>
+          </div>
+        );
+      });
     }
     if (activeTab === "Student Performance") {
       return activeStudents.map((enrollment: any) => <div key={enrollment.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{enrollment.student?.user?.name ?? enrollment.student?.user?.email}</h3><p className="mt-1 text-sm text-slate-600">{enrollment.course.title}</p><p className="mt-2 text-xs text-slate-500">{asArray(enrollment.student?.attendance).length} attendance records - {Math.round(asArray(enrollment.student?.presences).reduce((sum: number, item: any) => sum + item.totalSeconds, 0) / 60)} live minutes - {asArray(enrollment.student?.certificates).length} certificates</p></div>);
