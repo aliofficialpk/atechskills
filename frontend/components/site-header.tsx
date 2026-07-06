@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Menu, Search, UserCircle, X } from "lucide-react";
+import { Bell, LogOut, Menu, Search, UserCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { navItems } from "@/lib/data";
 import { ButtonLink } from "@/components/ui";
@@ -13,6 +13,8 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
 
   function readUser() {
     try {
@@ -35,6 +37,7 @@ export function SiteHeader() {
     localStorage.removeItem("atechskills_refresh_token");
     localStorage.removeItem("atechskills_user");
     setUser(null);
+    setUnreadCount(0);
     setOpen(false);
     window.dispatchEvent(new Event("atechskills:auth-changed"));
   }
@@ -48,6 +51,30 @@ export function SiteHeader() {
       window.removeEventListener("atechskills:auth-changed", readUser);
     };
   }, []);
+
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("atechskills_access_token") : null;
+    if (!token || !user) {
+      setUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    async function loadNotifications() {
+      try {
+        const response = await fetch(`${apiBase}/lms/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await response.json();
+        if (!cancelled && response.ok) setUnreadCount(Number(data.unreadCount ?? 0));
+      } catch {
+        if (!cancelled) setUnreadCount(0);
+      }
+    }
+    loadNotifications();
+    const interval = window.setInterval(loadNotifications, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [apiBase, user]);
 
   const dashboardHref = dashboardForRoles(user?.roles ?? []);
 
@@ -70,6 +97,10 @@ export function SiteHeader() {
           </Link>
           {user ? (
             <>
+              <Link href="/notifications" aria-label="Notifications" className="focus-ring relative rounded-md p-2 text-slate-700 hover:bg-slate-100">
+                <Bell size={21} />
+                {unreadCount > 0 && <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-brand-red text-[10px] font-bold text-white">{unreadCount > 9 ? "9+" : unreadCount}</span>}
+              </Link>
               <ButtonLink href={dashboardHref} variant="secondary" className="min-h-10 px-4 py-2">
                 <UserCircle size={17} /> {user.name ?? "Profile"}
               </ButtonLink>
@@ -98,6 +129,7 @@ export function SiteHeader() {
             ))}
             {user ? (
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <ButtonLink href="/notifications" variant="secondary">Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}</ButtonLink>
                 <ButtonLink href={dashboardHref} variant="secondary">Open Dashboard</ButtonLink>
                 <button onClick={logout} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white">
                   <LogOut size={16} /> Logout

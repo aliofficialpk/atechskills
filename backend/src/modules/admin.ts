@@ -154,6 +154,12 @@ adminRouter.get("/overview", asyncRoute(async (_req, res) => {
 adminRouter.get("/users", asyncRoute(async (_req, res) => res.json(await prisma.user.findMany({ include: { roles: { include: { role: true } } } }))));
 adminRouter.get("/roles", asyncRoute(async (_req, res) => res.json(await prisma.role.findMany({ include: { permissions: { include: { permission: true } } } }))));
 adminRouter.get("/tickets", asyncRoute(async (_req, res) => res.json(await prisma.supportTicket.findMany({ include: { messages: true }, orderBy: { createdAt: "desc" } }))));
+adminRouter.get("/queries", asyncRoute(async (_req, res) => {
+  res.json(await prisma.supportTicket.findMany({
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }]
+  }));
+}));
 adminRouter.get("/opportunities", asyncRoute(async (_req, res) => {
   res.json(await prisma.opportunity.findMany({ orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }] }));
 }));
@@ -197,6 +203,40 @@ adminRouter.patch("/tickets/:id/resolve", asyncRoute(async (req, res) => {
   const ticket = await prisma.supportTicket.update({ where: { id: String(req.params.id) }, data: { status: "RESOLVED" } });
   await audit(req.user?.id, "TICKET_RESOLVED", "SupportTicket", ticket.id);
   res.json(ticket);
+}));
+
+adminRouter.post("/queries/:id/reply", asyncRoute(async (req, res) => {
+  const ticket = await prisma.supportTicket.findUnique({ where: { id: String(req.params.id) } });
+  if (!ticket) return res.status(404).json({ error: "Query not found" });
+  const body = String(req.body.body ?? "").trim();
+  if (body.length < 2) return res.status(400).json({ error: "Reply message is required" });
+
+  const message = await prisma.supportMessage.create({
+    data: {
+      ticketId: ticket.id,
+      authorId: req.user!.id,
+      authorName: "AtechSkills Admin",
+      body
+    }
+  });
+  const updated = await prisma.supportTicket.update({
+    where: { id: ticket.id },
+    data: { status: req.body.resolve ? "RESOLVED" : "WAITING_ON_STUDENT" },
+    include: { messages: { orderBy: { createdAt: "asc" } } }
+  });
+  const targetUser = await prisma.user.findUnique({ where: { email: ticket.requesterEmail } });
+  if (targetUser) {
+    await prisma.notification.create({
+      data: {
+        userId: targetUser.id,
+        title: "Admin replied to your query",
+        body,
+        type: "SUPPORT"
+      }
+    });
+  }
+  await audit(req.user?.id, "SUPPORT_QUERY_REPLIED", "SupportTicket", ticket.id);
+  res.status(201).json({ ticket: updated, message });
 }));
 
 adminRouter.post("/notifications/broadcast", asyncRoute(async (req, res) => {

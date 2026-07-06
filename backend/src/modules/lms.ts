@@ -95,6 +95,15 @@ const enrollmentProfileSchema = z.object({
   message: z.string().optional()
 });
 
+const supportQuerySchema = z.object({
+  body: z.object({
+    subject: z.string().min(3),
+    category: z.string().min(2).default("General"),
+    priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
+    message: z.string().min(10)
+  })
+});
+
 function requiredSecondsForSession(session: { expectedDurationMinutes: number; attendanceThresholdPercent: number }) {
   return Math.ceil(session.expectedDurationMinutes * 60 * (session.attendanceThresholdPercent / 100));
 }
@@ -288,6 +297,56 @@ lmsRouter.get("/me", asyncRoute(async (req, res) => {
     }
   });
   res.json(user);
+}));
+
+lmsRouter.get("/notifications", asyncRoute(async (req, res) => {
+  const notifications = await prisma.notification.findMany({
+    where: { OR: [{ userId: req.user!.id }, { userId: null }] },
+    orderBy: { createdAt: "desc" },
+    take: 30
+  });
+  res.json({
+    unreadCount: notifications.filter((item) => !item.readAt).length,
+    notifications
+  });
+}));
+
+lmsRouter.patch("/notifications/read", asyncRoute(async (req, res) => {
+  await prisma.notification.updateMany({
+    where: { OR: [{ userId: req.user!.id }, { userId: null }], readAt: null },
+    data: { readAt: new Date() }
+  });
+  res.json({ ok: true });
+}));
+
+lmsRouter.get("/support-queries", asyncRoute(async (req, res) => {
+  const tickets = await prisma.supportTicket.findMany({
+    where: { requesterEmail: req.user!.email },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json(tickets);
+}));
+
+lmsRouter.post("/support-queries", validate(supportQuerySchema), asyncRoute(async (req, res) => {
+  const ticket = await prisma.supportTicket.create({
+    data: {
+      subject: req.body.subject,
+      category: req.body.category,
+      priority: req.body.priority,
+      requesterName: req.user!.email,
+      requesterEmail: req.user!.email,
+      messages: {
+        create: {
+          authorId: req.user!.id,
+          authorName: req.user!.email,
+          body: req.body.message
+        }
+      }
+    },
+    include: { messages: true }
+  });
+  res.status(201).json(ticket);
 }));
 
 function normalizeCoursePayload(body: z.infer<typeof courseSchema>["body"]) {

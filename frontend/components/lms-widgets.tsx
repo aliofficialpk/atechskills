@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Bell, BookOpenCheck, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock, ExternalLink, FileText, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
+import { Award, Bell, BookOpenCheck, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock, ExternalLink, FileText, MessageCircle, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
 import { categories as fallbackCategories, dashboardModules, portalCards, roleDashboards } from "@/lib/data";
 
@@ -54,7 +54,7 @@ function asArray<T = any>(value: unknown): T[] {
 
 const fallbackCourseCategories = fallbackCategories.map((category) => ({ id: "", name: category.name, slug: category.slug }));
 
-type StudentTab = "profile" | "overview" | "courses" | "attendance" | "assignments" | "live" | "recordings" | "certificates" | "notifications";
+type StudentTab = "profile" | "overview" | "courses" | "attendance" | "assignments" | "support" | "live" | "recordings" | "certificates" | "notifications";
 
 function uniqueById(items: any[] = []) {
   return Array.from(new Map(items.filter(Boolean).map((item) => [item.id, item])).values());
@@ -150,6 +150,7 @@ export function StudentPortalDashboard() {
     { id: "courses", label: "Enrolled Courses", icon: BookOpenCheck, count: metrics.enrollments.length },
     { id: "attendance", label: "Attendance", icon: CheckCircle2, count: metrics.attendance.length },
     { id: "assignments", label: "Assignments", icon: FileText, count: metrics.assignments.length },
+    { id: "support", label: "Support Queries", icon: MessageCircle },
     { id: "live", label: "Live Schedule", icon: CalendarDays, count: metrics.sessions.length },
     { id: "recordings", label: "Recordings", icon: PlayCircle, count: metrics.recordings.length },
     { id: "certificates", label: "Certificates", icon: Award, count: metrics.certificates.length },
@@ -217,6 +218,7 @@ export function StudentPortalDashboard() {
               {activeTab === "courses" && <StudentCoursesPanel enrollments={metrics.enrollments} reload={load} />}
               {activeTab === "attendance" && <StudentAttendancePanel attendance={metrics.attendance} sessions={metrics.sessions} />}
               {activeTab === "assignments" && <StudentAssignmentsPanel assignments={metrics.assignments} activeEnrollments={metrics.activeEnrollments} reload={load} />}
+              {activeTab === "support" && <SupportQueriesPanel />}
               {activeTab === "live" && <StudentLivePanel sessions={metrics.sessions} sessionId={sessionId} setSessionId={setSessionId} liveAction={liveAction} message={liveMessage} />}
               {activeTab === "recordings" && <StudentRecordingsPanel recordings={metrics.recordings} />}
               {activeTab === "certificates" && <StudentCertificatesPanel certificates={metrics.certificates} />}
@@ -425,6 +427,100 @@ function StudentNotificationsPanel({ notifications }: { notifications: any[] }) 
   return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Notifications</h2><div className="mt-5 grid gap-3">{notifications.length === 0 && <p className="text-sm text-slate-500">No notifications yet. Enrollment updates and class reminders will appear here.</p>}{notifications.map((item) => <div key={item.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.body}</p><p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p></div>)}</div></Card>;
 }
 
+function SupportQueriesPanel() {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    setState({ loading: true });
+    try {
+      const response = await authedFetch(`${apiBase}/lms/support-queries`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load support queries");
+      setState({ loading: false, data });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load support queries" });
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    setMessage("");
+    try {
+      const response = await authedFetch(`${apiBase}/lms/support-queries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to send query");
+      setMessage("Your query has been sent to administration.");
+      form.reset();
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to send query");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const tickets = asArray(state.data);
+  return (
+    <div className="mt-6 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card className="p-6">
+        <h2 className="flex items-center gap-2 text-xl font-bold"><MessageCircle className="text-brand-green" /> Send Query</h2>
+        <p className="mt-2 text-sm text-slate-600">Send academic, technical, payment, LMS, or course questions directly to administration.</p>
+        <form onSubmit={submit} className="mt-5 grid gap-3">
+          <input required name="subject" placeholder="Subject" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select name="category" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+              <option>Academic</option>
+              <option>Technical</option>
+              <option>Payment</option>
+              <option>Enrollment</option>
+              <option>LMS</option>
+              <option>General</option>
+            </select>
+            <select name="priority" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+              <option value="NORMAL">Normal</option>
+              <option value="LOW">Low</option>
+              <option value="HIGH">High</option>
+              <option value="URGENT">Urgent</option>
+            </select>
+          </div>
+          <textarea required name="message" rows={5} placeholder="Write your query..." className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white"><Send size={16} /> Send Query</button>
+        </form>
+        {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      </Card>
+      <Card className="p-6">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-bold">My Queries</h2>
+          <button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+        </div>
+        <div className="mt-5 grid gap-3">
+          {state.loading && <p className="text-sm text-slate-500">Loading queries...</p>}
+          {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+          {!state.loading && !state.error && tickets.length === 0 && <p className="text-sm text-slate-500">No queries yet.</p>}
+          {tickets.map((ticket) => (
+            <div key={ticket.id} className="rounded-md border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{ticket.subject}</h3><Badge>{ticket.status}</Badge></div>
+              <p className="mt-1 text-sm text-slate-600">{ticket.category} - {ticket.priority}</p>
+              <div className="mt-3 grid gap-2">
+                {asArray(ticket.messages).map((item: any) => <p key={item.id} className="rounded-md bg-slate-50 p-3 text-sm text-slate-700"><span className="font-semibold">{item.authorName}:</span> {item.body}</p>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export function StudentLearningCenter() {
   const [state, setState] = useState<ApiState<any>>({ loading: true });
   const [sessionId, setSessionId] = useState("");
@@ -524,6 +620,56 @@ export function StudentLearningCenter() {
   );
 }
 
+export function NotificationCenter() {
+  const [state, setState] = useState<ApiState<any>>({ loading: true });
+
+  async function load(markRead = false) {
+    setState({ loading: true });
+    try {
+      const response = await authedFetch(`${apiBase}/lms/notifications`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load notifications");
+      if (markRead) await authedFetch(`${apiBase}/lms/notifications/read`, { method: "PATCH" });
+      setState({ loading: false, data });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load notifications" });
+    }
+  }
+
+  useEffect(() => {
+    load(true);
+  }, []);
+
+  const notifications = asArray(state.data?.notifications);
+  return (
+    <section className="min-h-screen bg-slate-50 py-12">
+      <div className="container-page">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div><Badge>Notifications</Badge><h1 className="mt-3 text-3xl font-black">Notification Center</h1><p className="mt-2 text-sm text-slate-600">Admin replies, enrollment updates, class reminders, and course announcements appear here.</p></div>
+          <button onClick={() => load(true)} className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-brand-green">Refresh</button>
+        </div>
+        <Card className="p-6">
+          {state.loading && <p className="text-sm text-slate-500">Loading notifications...</p>}
+          {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+          {!state.loading && !state.error && notifications.length === 0 && <p className="text-sm text-slate-500">No notifications yet.</p>}
+          <div className="grid gap-3">
+            {notifications.map((item: any) => (
+              <div key={item.id} className={`rounded-md border p-4 ${item.readAt ? "border-slate-200 bg-white" : "border-red-200 bg-red-50"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-bold">{item.title}</h2>
+                  <Badge>{item.type}</Badge>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{item.body}</p>
+                <p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
 type PortalRole = "admin" | "teacher" | "services";
 
 const roleAccess: Record<PortalRole, string[]> = {
@@ -559,8 +705,8 @@ function tabId(value: string) {
 
 export function SecureRoleDashboard({ role }: { role: PortalRole }) {
   const tabs = role === "admin"
-    ? ["Overview", "Courses", "Students", "Course Enrollments", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
-    : portalCards[role].slice(0, 8);
+    ? ["Overview", "Courses", "Students", "Course Enrollments", "Queries", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
+    : role === "teacher" ? [...portalCards[role].slice(0, 8), "Queries"] : portalCards[role].slice(0, 8);
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
   const [ready, setReady] = useState(false);
@@ -661,6 +807,7 @@ function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
   if (activeTab === "Courses") return <AdminCourseManager />;
   if (activeTab === "Students") return <AdminStudentsPanel />;
   if (activeTab === "Course Enrollments") return <AdminCourseEnrollmentPanel />;
+  if (activeTab === "Queries") return <AdminQueriesPanel />;
   if (activeTab === "Instructors") return <AdminMentorManager />;
   if (activeTab === "Payments") return <AdminEnrollmentQueue />;
   if (activeTab === "Live Classes") return <AdminScheduleForm />;
@@ -742,6 +889,9 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
   const activeStudents = enrollments.filter((item: any) => item.status === "ACTIVE");
 
   function renderContent() {
+    if (activeTab === "Queries") {
+      return [];
+    }
     if (activeTab === "Assigned Courses") {
       return courses.map((course) => <div key={course.id} className="rounded-md border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">{course.title}</h3><Badge>{course.status}</Badge></div><p className="mt-1 text-sm text-slate-600">{course.summary}</p><p className="mt-2 text-xs text-slate-500">{asArray(course.enrollments).length} enrollments - {asArray(course.sections).length} sections - {asArray(course.sessions).length} sessions</p></div>);
     }
@@ -762,6 +912,8 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
 
   return (
     <div className="grid gap-6">
+      {activeTab === "Queries" ? <SupportQueriesPanel /> : (
+        <>
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="p-5"><p className="text-sm text-slate-500">Assigned Courses</p><p className="mt-2 text-3xl font-black text-brand-green">{courses.length}</p><p className="mt-1 text-xs text-slate-500">Courses under your account</p></Card>
         <Card className="p-5"><p className="text-sm text-slate-500">Active Students</p><p className="mt-2 text-3xl font-black text-brand-green">{activeStudents.length}</p><p className="mt-1 text-xs text-slate-500">Verified enrollments</p></Card>
@@ -778,12 +930,96 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
         {!state.loading && !state.error && courses.length > 0 && renderContent().length === 0 && <p className="text-sm text-slate-500">No records available for this tab yet.</p>}
       </div>
       </Card>
+        </>
+      )}
     </div>
   );
 }
 
 function ServicesWorkspace({ activeTab }: { activeTab: string }) {
   return <Card className="p-6"><h2 className="text-xl font-bold">{activeTab}</h2><p className="mt-2 text-sm text-slate-600">Student Services tools are restricted to support staff accounts. Ticket inbox, student lookup, payment support, and conversation history can be expanded here without exposing admin controls.</p><ButtonLink href="/student-services" className="mt-5">Open Support Form</ButtonLink></Card>;
+}
+
+function AdminQueriesPanel() {
+  const [state, setState] = useState<ApiState<any[]>>({ loading: true });
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    setState({ loading: true });
+    try {
+      const response = await authedFetch(`${apiBase}/admin/queries`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load queries");
+      setState({ loading: false, data });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Unable to load queries" });
+    }
+  }
+
+  async function reply(event: React.FormEvent<HTMLFormElement>, ticketId: string) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form).entries());
+    setMessage("");
+    try {
+      const response = await authedFetch(`${apiBase}/admin/queries/${ticketId}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: values.body, resolve: values.resolve === "on" })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to send reply");
+      setMessage("Reply sent and notification delivered.");
+      form.reset();
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to send reply");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const queries = asArray(state.data);
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-bold"><MessageCircle className="text-brand-green" /> Queries</h2>
+          <p className="mt-1 text-sm text-slate-600">Reply to student and teacher queries. Replies notify the specific account.</p>
+        </div>
+        <button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+      </div>
+      {message && <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      <div className="mt-5 grid gap-4">
+        {state.loading && <p className="text-sm text-slate-500">Loading queries...</p>}
+        {state.error && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>}
+        {!state.loading && !state.error && queries.length === 0 && <p className="text-sm text-slate-500">No queries yet.</p>}
+        {queries.map((ticket) => (
+          <div key={ticket.id} className="rounded-md border border-slate-200 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold">{ticket.subject}</h3>
+                <p className="mt-1 text-sm text-slate-600">{ticket.requesterEmail} - {ticket.category} - {ticket.priority}</p>
+              </div>
+              <Badge>{ticket.status}</Badge>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {asArray(ticket.messages).map((item: any) => <p key={item.id} className="rounded-md bg-slate-50 p-3 text-sm text-slate-700"><span className="font-semibold">{item.authorName}:</span> {item.body}</p>)}
+            </div>
+            <form onSubmit={(event) => reply(event, ticket.id)} className="mt-4 grid gap-3">
+              <textarea required name="body" rows={3} placeholder="Write admin reply..." className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm text-slate-700"><input name="resolve" type="checkbox" /> Mark resolved</label>
+                <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-brand-green px-4 py-2 text-sm font-semibold text-white"><Send size={15} /> Reply</button>
+              </div>
+            </form>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
 }
 
 function AdminStudentsPanel() {
