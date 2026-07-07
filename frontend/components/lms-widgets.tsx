@@ -69,6 +69,19 @@ function formatDateTime(value?: string) {
   return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+function youtubeEmbedUrl(url?: string) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const id = host === "youtu.be" ? parsed.pathname.slice(1) : parsed.searchParams.get("v");
+    if (!id || !["youtube.com", "m.youtube.com", "youtu.be"].includes(host)) return "";
+    return `https://www.youtube.com/embed/${id}`;
+  } catch {
+    return "";
+  }
+}
+
 function studentDashboardMetrics(data: any) {
   const student = data?.student;
   const enrollments = asArray(student?.enrollments);
@@ -314,12 +327,49 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
     setUploadingId(`${mode}:${targetId}`);
     setMessage("");
     try {
-      const path = mode === "course" ? `/lms/courses/${targetId}/submit-assignment` : `/lms/assignments/${targetId}/submit`;
-      const response = await authedFetch(`${apiBase}${path}`, {
-        method: "POST",
-        body: values
-      });
-      const data = await response.json();
+      let response: Response;
+      if (file.type.startsWith("video/")) {
+        const signatureResponse = await authedFetch(`${apiBase}/lms/assignment-video-signature`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode, targetId })
+        });
+        const signatureData = await signatureResponse.json();
+        if (!signatureResponse.ok) throw new Error(signatureData.error ?? "Unable to prepare video upload");
+
+        const uploadValues = new FormData();
+        uploadValues.set("file", file);
+        uploadValues.set("api_key", signatureData.apiKey);
+        uploadValues.set("timestamp", String(signatureData.timestamp));
+        uploadValues.set("folder", signatureData.folder);
+        uploadValues.set("signature", signatureData.signature);
+        const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${signatureData.cloudName}/video/upload`, {
+          method: "POST",
+          body: uploadValues
+        });
+        const cloudinaryData = await cloudinaryResponse.json();
+        if (!cloudinaryResponse.ok) throw new Error(cloudinaryData.error?.message ?? "Video upload failed");
+
+        const linkPath = mode === "course" ? `/lms/courses/${targetId}/submit-video-link` : `/lms/assignments/${targetId}/submit-video-link`;
+        response = await authedFetch(`${apiBase}${linkPath}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileUrl: cloudinaryData.secure_url, fileName: file.name, mimeType: file.type, answer: String(values.get("answer") ?? "") })
+        });
+      } else {
+        const path = mode === "course" ? `/lms/courses/${targetId}/submit-assignment` : `/lms/assignments/${targetId}/submit`;
+        response = await authedFetch(`${apiBase}${path}`, {
+          method: "POST",
+          body: values
+        });
+      }
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: text || "Assignment upload failed" };
+      }
       if (!response.ok) throw new Error(data.error ?? "Assignment upload failed");
       form.reset();
       setMessage("Assignment submitted successfully. Your teacher can now review it.");
@@ -421,7 +471,34 @@ function StudentLivePanel({ sessions, sessionId, setSessionId, liveAction, messa
 }
 
 function StudentRecordingsPanel({ recordings }: { recordings: any[] }) {
-  return <Card className="mt-6 p-6"><h2 className="text-xl font-bold">Recordings</h2><div className="mt-5 grid gap-3">{recordings.length === 0 && <p className="text-sm text-slate-500">No recordings are attached to your courses yet.</p>}{recordings.map((item) => <a key={item.id} href={item.url} target="_blank" className="rounded-md border border-slate-200 p-4 transition hover:border-brand-green"><h3 className="font-bold">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{item.storage ?? "recording"}{item.duration ? ` - ${item.duration} min` : ""}</p></a>)}</div></Card>;
+  return (
+    <Card className="mt-6 p-6">
+      <h2 className="text-xl font-bold">Recordings</h2>
+      <p className="mt-2 text-sm text-slate-600">Lecture recordings added by your teacher or admin appear here.</p>
+      <div className="mt-5 grid gap-4">
+        {recordings.length === 0 && <p className="text-sm text-slate-500">No recordings are attached to your courses yet.</p>}
+        {recordings.map((item) => {
+          const embedUrl = youtubeEmbedUrl(item.url);
+          return (
+            <div key={item.id} className="rounded-md border border-slate-200 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold">{item.title}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{item.storage ?? "recording"}{item.duration ? ` - ${item.duration} min` : ""}</p>
+                </div>
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green">Open Link <ExternalLink size={15} /></a>
+              </div>
+              {embedUrl && (
+                <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-black">
+                  <iframe src={embedUrl} title={item.title} className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
 }
 
 function StudentCertificatesPanel({ certificates }: { certificates: any[] }) {
@@ -710,7 +787,7 @@ function tabId(value: string) {
 
 export function SecureRoleDashboard({ role }: { role: PortalRole }) {
   const tabs = role === "admin"
-    ? ["Overview", "Courses", "Students", "Course Enrollments", "Queries", "Instructors", "Payments", "Live Classes", "Jobs", "Staff", "Performance"]
+    ? ["Overview", "Courses", "Students", "Course Enrollments", "Queries", "Instructors", "Payments", "Live Classes", "Recordings", "Jobs", "Staff", "Performance"]
     : role === "teacher" ? [...portalCards[role].slice(0, 8), "Queries"] : portalCards[role].slice(0, 8);
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
@@ -816,6 +893,7 @@ function AdminTabbedPanel({ activeTab }: { activeTab: string }) {
   if (activeTab === "Instructors") return <AdminMentorManager />;
   if (activeTab === "Payments") return <AdminEnrollmentQueue />;
   if (activeTab === "Live Classes") return <AdminScheduleForm />;
+  if (activeTab === "Recordings") return <RecordingManager />;
   if (activeTab === "Jobs") return <AdminOpportunityManager />;
   if (activeTab === "Staff") return <AdminStaffForm />;
   if (activeTab === "Performance") return <AdminPerformancePanel />;
@@ -863,10 +941,21 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
     }
   }
 
-  async function openSubmission(submissionId: string) {
-    setOpeningId(submissionId);
+  async function openSubmission(submission: any) {
+    setOpeningId(submission.id);
     try {
-      const response = await authedFetch(`${apiBase}/lms/submissions/${submissionId}/download`);
+      const directUrl = typeof submission.fileUrl === "string" && submission.fileUrl.startsWith("http") ? submission.fileUrl : "";
+      if (directUrl) {
+        if (directUrl.includes("/video/upload/") || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(directUrl)) {
+          if (preview?.url?.startsWith("blob:")) URL.revokeObjectURL(preview.url);
+          setPreview({ id: submission.id, url: directUrl, type: "video" });
+          return;
+        }
+        window.open(directUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const response = await authedFetch(`${apiBase}/lms/submissions/${submission.id}/download`);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? "Unable to open assignment file");
@@ -876,14 +965,14 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
       const type = blob.type || response.headers.get("Content-Type") || "";
       if (type.startsWith("video/")) {
         if (preview?.url) URL.revokeObjectURL(preview.url);
-        setPreview({ id: submissionId, url, type });
+        setPreview({ id: submission.id, url, type });
         return;
       }
       const link = document.createElement("a");
       link.href = url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      link.download = type === "application/pdf" ? `assignment-${submissionId}.pdf` : `assignment-${submissionId}`;
+      link.download = type === "application/pdf" ? `assignment-${submission.id}.pdf` : `assignment-${submission.id}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -930,7 +1019,7 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
                 <p className="mt-1 text-sm text-slate-600">{submission.user?.name ?? submission.user?.email} - {submission.assignment.course.title}</p>
                 <p className="mt-1 text-xs text-slate-500">Submitted {formatDateTime(submission.submittedAt)}</p>
               </div>
-              <button type="button" onClick={() => openSubmission(submission.id)} disabled={openingId === submission.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green disabled:opacity-60">
+      <button type="button" onClick={() => openSubmission(submission)} disabled={openingId === submission.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green disabled:opacity-60">
                 {openingId === submission.id ? "Opening..." : "Open File"}
               </button>
             </div>
@@ -944,6 +1033,9 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
         );
       });
     }
+    if (activeTab === "Recordings") {
+      return [];
+    }
     if (activeTab === "Student Performance") {
       return activeStudents.map((enrollment: any) => <div key={enrollment.id} className="rounded-md border border-slate-200 p-4"><h3 className="font-bold">{enrollment.student?.user?.name ?? enrollment.student?.user?.email}</h3><p className="mt-1 text-sm text-slate-600">{enrollment.course.title}</p><p className="mt-2 text-xs text-slate-500">{asArray(enrollment.student?.attendance).length} attendance records - {Math.round(asArray(enrollment.student?.presences).reduce((sum: number, item: any) => sum + item.totalSeconds, 0) / 60)} live minutes - {asArray(enrollment.student?.certificates).length} certificates</p></div>);
     }
@@ -953,6 +1045,7 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
   return (
     <div className="grid gap-6">
       {activeTab === "Queries" ? <SupportQueriesPanel /> : (
+      activeTab === "Recordings" ? <RecordingManager initialCourses={courses} /> : (
         <>
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="p-5"><p className="text-sm text-slate-500">Assigned Courses</p><p className="mt-2 text-3xl font-black text-brand-green">{courses.length}</p><p className="mt-1 text-xs text-slate-500">Courses under your account</p></Card>
@@ -971,13 +1064,125 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
       </div>
       </Card>
         </>
-      )}
+      ))}
     </div>
   );
 }
 
 function ServicesWorkspace({ activeTab }: { activeTab: string }) {
   return <Card className="p-6"><h2 className="text-xl font-bold">{activeTab}</h2><p className="mt-2 text-sm text-slate-600">Student Services tools are restricted to support staff accounts. Ticket inbox, student lookup, payment support, and conversation history can be expanded here without exposing admin controls.</p><ButtonLink href="/student-services" className="mt-5">Open Support Form</ButtonLink></Card>;
+}
+
+function RecordingManager({ initialCourses = [] }: { initialCourses?: any[] }) {
+  const [courses, setCourses] = useState<any[]>(initialCourses);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourses[0]?.id ?? "");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(initialCourses.length === 0);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await authedFetch(`${apiBase}/lms/teacher/courses`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to load courses");
+      const list = asArray(data);
+      setCourses(list);
+      setSelectedCourseId((current) => current || list[0]?.id || "");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load courses");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    setMessage("");
+    try {
+      const response = await authedFetch(`${apiBase}/lms/recordings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: raw.courseId,
+          liveSessionId: raw.liveSessionId || "",
+          title: raw.title,
+          url: raw.url,
+          duration: raw.duration ? Number(raw.duration) : undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to add recording");
+      setMessage(`Recording added: ${data.title}`);
+      form.reset();
+      setSelectedCourseId(String(raw.courseId || ""));
+      load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add recording");
+    }
+  }
+
+  useEffect(() => {
+    if (initialCourses.length === 0) load();
+  }, []);
+
+  useEffect(() => {
+    setCourses(initialCourses);
+    if (initialCourses.length > 0 && !selectedCourseId) setSelectedCourseId(initialCourses[0].id);
+  }, [initialCourses]);
+
+  const selectedCourse = courses.find((course) => course.id === selectedCourseId);
+  const recordings = courses.flatMap((course) => asArray(course.recordings).map((recording: any) => ({ ...recording, course })));
+  const sessions = asArray(selectedCourse?.sessions);
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card className="p-6">
+        <h2 className="flex items-center gap-2 text-xl font-bold"><PlayCircle className="text-brand-green" /> Add Recording Link</h2>
+        <p className="mt-2 text-sm text-slate-600">Add a lecture recording URL to any course you manage. YouTube links will embed for students automatically.</p>
+        <form onSubmit={submit} className="mt-5 grid gap-3">
+          <select required name="courseId" value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+            <option value="">Select course</option>
+            {courses.map((course) => <option key={course.id} value={course.id}>{course.title}</option>)}
+          </select>
+          <input required name="title" placeholder="Recording title" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <input required name="url" type="url" placeholder="YouTube or recording link" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <select name="liveSessionId" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green">
+              <option value="">Optional live session</option>
+              {sessions.map((session: any) => <option key={session.id} value={session.id}>{session.title} - {formatDateTime(session.startsAt)}</option>)}
+            </select>
+            <input name="duration" type="number" min="1" placeholder="Duration minutes optional" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
+          </div>
+          <button disabled={loading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"><Send size={16} /> Add Recording</button>
+        </form>
+        {message && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+      </Card>
+      <Card className="p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-bold">Course Recordings</h2>
+          <button onClick={load} className="rounded-md border border-slate-200 p-2 text-brand-green"><RefreshCcw size={18} /></button>
+        </div>
+        <div className="mt-5 grid gap-4">
+          {loading && <p className="text-sm text-slate-500">Loading recordings...</p>}
+          {!loading && recordings.length === 0 && <p className="text-sm text-slate-500">No recordings added yet.</p>}
+          {recordings.map((recording) => {
+            const embedUrl = youtubeEmbedUrl(recording.url);
+            return (
+              <div key={recording.id} className="rounded-md border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h3 className="font-bold">{recording.title}</h3><p className="mt-1 text-sm text-slate-600">{recording.course?.title}{recording.duration ? ` - ${recording.duration} min` : ""}</p></div>
+                  <a href={recording.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-brand-green">Open <ExternalLink size={15} /></a>
+                </div>
+                {embedUrl && <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-black"><iframe src={embedUrl} title={recording.title} className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 function AdminQueriesPanel() {

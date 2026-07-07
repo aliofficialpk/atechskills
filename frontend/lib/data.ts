@@ -156,7 +156,7 @@ export const portalCards = {
     "Recordings",
     "Notifications"
   ],
-  teacher: ["Assigned Courses", "Live Classes", "Mark Attendance", "Grade Assignments", "Student Performance", "Teacher Notes"],
+  teacher: ["Assigned Courses", "Live Classes", "Mark Attendance", "Grade Assignments", "Recordings", "Student Performance", "Teacher Notes"],
   admin: [
     "Courses",
     "Students",

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
 import { z } from "zod";
 import { asyncRoute } from "../lib/async-route.js";
 import { prisma, withDbRetry } from "../lib/prisma.js";
@@ -101,6 +102,25 @@ const supportQuerySchema = z.object({
     category: z.string().min(2).default("General"),
     priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
     message: z.string().min(10)
+  })
+});
+
+const videoLinkSchema = z.object({
+  body: z.object({
+    fileUrl: z.string().url(),
+    fileName: z.string().optional(),
+    mimeType: z.string().optional(),
+    answer: z.string().optional()
+  })
+});
+
+const recordingLinkSchema = z.object({
+  body: z.object({
+    courseId: z.string(),
+    title: z.string().min(2),
+    url: z.string().url(),
+    liveSessionId: z.string().optional().or(z.literal("")),
+    duration: z.coerce.number().int().positive().optional()
   })
 });
 
@@ -265,6 +285,27 @@ async function storeSubmissionFile(submissionId: string, file: Express.Multer.Fi
   `;
 }
 
+function getCloudinaryConfig() {
+  const configured = cloudinary.config();
+  if (configured.cloud_name && configured.api_key && configured.api_secret) {
+    return { cloudName: configured.cloud_name, apiKey: configured.api_key, apiSecret: configured.api_secret };
+  }
+  const url = process.env.CLOUDINARY_URL;
+  if (!url) return null;
+  const parsed = new URL(url);
+  return {
+    cloudName: parsed.hostname,
+    apiKey: parsed.username,
+    apiSecret: parsed.password
+  };
+}
+
+async function requireActiveEnrollment(userId: string, courseId: string) {
+  const student = await ensureStudentForUser(userId);
+  const enrollment = await prisma.enrollment.findUnique({ where: { studentId_courseId: { studentId: student.id, courseId } } });
+  return enrollment?.status === "ACTIVE";
+}
+
 lmsRouter.use(requireAuth);
 
 lmsRouter.get("/me", asyncRoute(async (req, res) => {
@@ -402,6 +443,7 @@ lmsRouter.get("/teacher/courses", requireRole("Teacher", "Admin", "Super Admin")
     include: {
       sections: { include: { lessons: true }, orderBy: { position: "asc" } },
       sessions: { include: { presences: true, attendance: true, recording: true }, orderBy: { startsAt: "asc" } },
+      recordings: { orderBy: { createdAt: "desc" } },
       assignments: { include: { submissions: { include: { user: true }, orderBy: { submittedAt: "desc" } } }, orderBy: { dueAt: "asc" } },
       enrollments: { include: { student: { include: { user: true, attendance: true, presences: true, certificates: true } } }, orderBy: { requestedAt: "desc" } }
     },
@@ -714,6 +756,33 @@ lmsRouter.get("/live-sessions", requireRole("Teacher", "Admin", "Super Admin"), 
   res.json(sessions);
 }));
 
+lmsRouter.post("/recordings", requireRole("Teacher", "Admin", "Super Admin"), validate(recordingLinkSchema), asyncRoute(async (req, res) => {
+  const course = await prisma.course.findUnique({ where: { id: req.body.courseId }, include: { instructor: true } });
+  if (!course) return res.status(404).json({ error: "Course not found" });
+  const isAdmin = req.user!.roles.some((role) => ["Admin", "Super Admin"].includes(role));
+  if (!isAdmin && !(await canTeacherAccessCourse(req.user!.id, course.id))) {
+    return res.status(403).json({ error: "Teachers can add recordings only to assigned courses." });
+  }
+  if (req.body.liveSessionId) {
+    const session = await prisma.liveSession.findFirst({ where: { id: req.body.liveSessionId, courseId: course.id } });
+    if (!session) return res.status(404).json({ error: "Live session not found for this course." });
+  }
+  const recording = await prisma.recording.create({
+    data: {
+      courseId: course.id,
+      liveSessionId: req.body.liveSessionId || undefined,
+      title: req.body.title,
+      url: req.body.url,
+      storage: "external",
+      duration: req.body.duration
+    },
+    include: { course: true, liveSession: true }
+  });
+  await notifyActiveCourseStudents(course.id, "New recording added", `${recording.title} is now available in your course recordings tab.`);
+  await prisma.auditLog.create({ data: { actorId: req.user!.id, action: "RECORDING_LINK_ADDED", entity: "Recording", entityId: recording.id } });
+  res.status(201).json(recording);
+}));
+
 lmsRouter.post("/live-sessions/generate", requireRole("Teacher", "Admin", "Super Admin"), validate(liveSessionGenerationSchema), asyncRoute(async (req, res) => {
   const course = await prisma.course.findUnique({ where: { id: req.body.courseId } });
   if (!course) return res.status(404).json({ error: "Course not found" });
@@ -827,6 +896,45 @@ lmsRouter.post("/assignments", requireRole("Teacher", "Admin", "Super Admin"), a
   res.status(201).json(assignment);
 }));
 
+lmsRouter.post("/assignment-video-signature", requireRole("Student"), asyncRoute(async (req, res) => {
+  const mode = req.body.mode === "course" ? "course" : "assignment";
+  const targetId = String(req.body.targetId ?? "");
+  let courseId = targetId;
+  if (mode === "assignment") {
+    const assignment = await prisma.assignment.findUnique({ where: { id: targetId }, select: { courseId: true } });
+    if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+    courseId = assignment.courseId;
+  } else {
+    const course = await prisma.course.findUnique({ where: { id: targetId }, select: { id: true } });
+    if (!course) return res.status(404).json({ error: "Course not found" });
+  }
+  if (!(await requireActiveEnrollment(req.user!.id, courseId))) {
+    return res.status(403).json({ error: "Active enrollment is required before uploading assignment videos." });
+  }
+
+  const config = getCloudinaryConfig();
+  if (!config) return res.status(503).json({ error: "Cloudinary video upload is not configured." });
+  const timestamp = Math.round(Date.now() / 1000);
+  const folder = "atechskills/assignment-videos";
+  const signature = cloudinary.utils.api_sign_request({ timestamp, folder }, config.apiSecret);
+  res.json({ cloudName: config.cloudName, apiKey: config.apiKey, timestamp, folder, signature });
+}));
+
+async function createVideoSubmission(userId: string, assignmentId: string, body: z.infer<typeof videoLinkSchema>["body"]) {
+  const assignment = await prisma.assignment.findUnique({ where: { id: assignmentId } });
+  if (!assignment) return null;
+  if (!(await requireActiveEnrollment(userId, assignment.courseId))) return false;
+  return prisma.submission.create({
+    data: {
+      assignmentId,
+      userId,
+      fileUrl: body.fileUrl,
+      answer: body.answer ? `${body.answer}\n\nUploaded file: ${body.fileName ?? "video"}${body.mimeType ? ` (${body.mimeType})` : ""}` : `Uploaded file: ${body.fileName ?? "video"}${body.mimeType ? ` (${body.mimeType})` : ""}`
+    },
+    include: { assignment: { include: { course: true } }, user: true }
+  });
+}
+
 lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
   const assignment = await prisma.assignment.findUnique({ where: { id: String(req.params.id) }, include: { course: true } });
   if (!assignment) return res.status(404).json({ error: "Assignment not found" });
@@ -851,6 +959,13 @@ lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUplo
     include: { assignment: { include: { course: true } }, user: true }
   });
   res.status(201).json(updatedSubmission);
+}));
+
+lmsRouter.post("/assignments/:id/submit-video-link", requireRole("Student"), validate(videoLinkSchema), asyncRoute(async (req, res) => {
+  const result = await createVideoSubmission(req.user!.id, String(req.params.id), req.body);
+  if (result === null) return res.status(404).json({ error: "Assignment not found" });
+  if (result === false) return res.status(403).json({ error: "Active enrollment is required before submitting this assignment." });
+  res.status(201).json(result);
 }));
 
 lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), assignmentUpload.single("file"), asyncRoute(async (req, res) => {
@@ -889,6 +1004,25 @@ lmsRouter.post("/courses/:courseId/submit-assignment", requireRole("Student"), a
     include: { assignment: { include: { course: true } }, user: true }
   });
   res.status(201).json(updatedSubmission);
+}));
+
+lmsRouter.post("/courses/:courseId/submit-video-link", requireRole("Student"), validate(videoLinkSchema), asyncRoute(async (req, res) => {
+  const course = await prisma.course.findUnique({ where: { id: String(req.params.courseId) } });
+  if (!course) return res.status(404).json({ error: "Course not found" });
+  if (!(await requireActiveEnrollment(req.user!.id, course.id))) return res.status(403).json({ error: "Active enrollment is required before submitting work for this course." });
+  const assignment = await prisma.assignment.findFirst({
+    where: { courseId: course.id, title: "General Course Submission" },
+    orderBy: { id: "asc" }
+  }) ?? await prisma.assignment.create({
+    data: {
+      courseId: course.id,
+      title: "General Course Submission",
+      description: "Student-uploaded work for this course.",
+      maxScore: 100
+    }
+  });
+  const result = await createVideoSubmission(req.user!.id, assignment.id, req.body);
+  res.status(201).json(result);
 }));
 
 lmsRouter.get("/submissions/:id/download", requireRole("Teacher", "Admin", "Super Admin", "Student"), asyncRoute(async (req, res) => {
