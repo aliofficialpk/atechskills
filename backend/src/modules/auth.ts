@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { env } from "../config.js";
 import { asyncRoute } from "../lib/async-route.js";
+import { sendOtpEmail } from "../lib/email.js";
 import { prisma, withDbRetry } from "../lib/prisma.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/tokens.js";
 import { validate } from "../middleware/validate.js";
@@ -58,6 +59,46 @@ function safeFrontendPath(path?: string) {
   return path;
 }
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function otpSettingKey(email: string) {
+  return `email-otp:${normalizeEmail(email)}`;
+}
+
+function hashOtp(email: string, code: string) {
+  return crypto.createHmac("sha256", env.JWT_ACCESS_SECRET).update(`${normalizeEmail(email)}:${code}`).digest("hex");
+}
+
+function createOtpCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+async function verifyEmailOtp(email: string, code: string) {
+  const setting = await withDbRetry(() => prisma.setting.findUnique({ where: { key: otpSettingKey(email) } }), 3);
+  const value = setting?.value as { codeHash?: string; expiresAt?: string; attempts?: number } | undefined;
+  if (!setting || !value?.codeHash || !value.expiresAt) return false;
+  if (new Date(value.expiresAt).getTime() < Date.now()) {
+    await prisma.setting.delete({ where: { key: setting.key } }).catch(() => undefined);
+    return false;
+  }
+  if ((value.attempts ?? 0) >= 5) return false;
+
+  const providedHash = hashOtp(email, code);
+  const isValid = providedHash.length === value.codeHash.length && crypto.timingSafeEqual(Buffer.from(providedHash), Buffer.from(value.codeHash));
+  if (!isValid) {
+    await prisma.setting.update({
+      where: { key: setting.key },
+      data: { value: { ...value, attempts: (value.attempts ?? 0) + 1 } }
+    }).catch(() => undefined);
+    return false;
+  }
+
+  await prisma.setting.delete({ where: { key: setting.key } }).catch(() => undefined);
+  return true;
+}
+
 async function issueAuthResponseForUser(userId: string) {
   const user = await withDbRetry(() => prisma.user.findUniqueOrThrow({
     where: { id: userId },
@@ -76,12 +117,63 @@ const credentialsSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
     name: z.string().min(2).optional(),
-    phone: z.string().min(7).optional()
+    phone: z.string().min(7).optional(),
+    otp: z.string().regex(/^\d{6}$/).optional()
   })
 });
 
+const sendOtpSchema = z.object({
+  body: z.object({
+    email: z.string().email()
+  })
+});
+
+authRouter.post("/send-otp", validate(sendOtpSchema), asyncRoute(async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const existing = await withDbRetry(() => prisma.user.findUnique({ where: { email }, select: { id: true } }), 3);
+  if (existing) return res.status(409).json({ error: "An account already exists for this email. Please login instead." });
+
+  const code = createOtpCode();
+  await withDbRetry(() => prisma.setting.upsert({
+    where: { key: otpSettingKey(email) },
+    update: {
+      value: {
+        codeHash: hashOtp(email, code),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        attempts: 0,
+        purpose: "register"
+      }
+    },
+    create: {
+      key: otpSettingKey(email),
+      value: {
+        codeHash: hashOtp(email, code),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        attempts: 0,
+        purpose: "register"
+      }
+    }
+  }), 3);
+
+  try {
+    await sendOtpEmail(email, code);
+  } catch (error) {
+    await prisma.setting.delete({ where: { key: otpSettingKey(email) } }).catch(() => undefined);
+    return res.status(503).json({ error: error instanceof Error ? error.message : "Unable to send OTP email right now." });
+  }
+
+  res.json({ message: "Verification code sent. Please check your inbox." });
+}));
+
 authRouter.post("/register", validate(credentialsSchema), asyncRoute(async (req, res) => {
-  const { email, password, name, phone } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const { password, name, phone, otp } = req.body;
+  if (!otp || !(await verifyEmailOtp(email, otp))) {
+    return res.status(400).json({ error: "Enter the valid 6-digit verification code sent to your email." });
+  }
+  const existing = await withDbRetry(() => prisma.user.findUnique({ where: { email }, select: { id: true } }), 3);
+  if (existing) return res.status(409).json({ error: "An account already exists for this email. Please login instead." });
+
   const passwordHash = await bcrypt.hash(password, 12);
   const role = await withDbRetry(() => prisma.role.upsert({ where: { name: "Student" }, update: {}, create: { name: "Student", description: "Learner role" } }), 3);
   const user = await withDbRetry(() => prisma.user.create({
@@ -107,7 +199,7 @@ const loginSchema = z.object({
 });
 
 authRouter.post("/login", validate(loginSchema), asyncRoute(async (req, res) => {
-  const login = String(req.body.email).trim().toLowerCase();
+  const login = normalizeEmail(String(req.body.email));
   const email = login === "admin" ? "admin@atechskills.com" : login;
   const user = await withDbRetry(() => prisma.user.findUnique({
     where: { email },
@@ -169,7 +261,7 @@ authRouter.get("/google/callback", asyncRoute(async (req, res) => {
     return res.redirect(`${env.FRONTEND_URL}/login?google=email-not-verified`);
   }
 
-  const email = profile.email.toLowerCase();
+  const email = normalizeEmail(profile.email);
   const role = await withDbRetry(() => prisma.role.upsert({ where: { name: "Student" }, update: {}, create: { name: "Student", description: "Learner role" } }), 3);
   const existingUser = await withDbRetry(() => prisma.user.findUnique({ where: { email }, include: { student: true, roles: true } }), 3);
   if (existingUser && !existingUser.isActive) return res.redirect(`${env.FRONTEND_URL}/login?google=inactive`);
@@ -202,7 +294,7 @@ authRouter.get("/google/callback", asyncRoute(async (req, res) => {
     user: JSON.stringify(authPayload.user),
     returnTo: safeFrontendPath(state.returnTo)
   });
-  res.redirect(`${env.FRONTEND_URL}/auth/google/callback#${fragment.toString()}`);
+  res.redirect(`${env.FRONTEND_URL}/auth/google/callback?${fragment.toString()}`);
 }));
 
 authRouter.post("/forgot-password", (_req, res) => res.json({ message: "Password recovery email queued when SMTP is configured." }));

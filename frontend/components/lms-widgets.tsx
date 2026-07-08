@@ -327,6 +327,10 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
     setUploadingId(`${mode}:${targetId}`);
     setMessage("");
     try {
+      if (!localStorage.getItem("atechskills_access_token") && !(await refreshSession())) {
+        setMessage("Please login again before uploading assignments.");
+        return;
+      }
       let response: Response;
       if (file.type.startsWith("video/")) {
         const signatureResponse = await authedFetch(`${apiBase}/lms/assignment-video-signature`, {
@@ -440,7 +444,7 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
                   <input name="answer" className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" placeholder="Optional message for your teacher" />
                 </label>
                 <button disabled={uploadingId === `assignment:${item.id}`} className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-green px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
-                  {uploadingId === `assignment:${item.id}` ? "Uploading..." : "Submit PDF"}
+                  {uploadingId === `assignment:${item.id}` ? "Uploading..." : "Submit Work"}
                 </button>
               </form>
             </div>

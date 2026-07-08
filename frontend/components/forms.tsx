@@ -78,6 +78,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [otpStatus, setOtpStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
+  const [otpMessage, setOtpMessage] = useState("");
   const isLogin = mode === "login";
   const isRegister = mode === "register";
   const isRecovery = mode === "forgot-password" || mode === "reset-password";
@@ -99,7 +101,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
     const endpoint = isLogin ? "/auth/login" : isRegister ? "/auth/register" : "/auth/forgot-password";
     const payload = isRecovery
       ? { email: values.email }
-      : { name: values.name, email: values.email, phone: values.phone, password: values.password };
+      : { name: values.name, email: values.email, phone: values.phone, password: values.password, otp: values.otp };
 
     try {
       const response = await fetch(`${apiBase}${endpoint}`, {
@@ -125,6 +127,32 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
 
   function startGoogleLogin() {
     window.location.href = `${apiBase}/auth/google?returnTo=${encodeURIComponent("/student-dashboard")}`;
+  }
+
+  async function sendRegistrationOtp() {
+    const emailInput = document.querySelector<HTMLInputElement>('form input[name="email"]');
+    const email = emailInput?.value.trim();
+    if (!email) {
+      setOtpStatus("error");
+      setOtpMessage("Enter your email first, then request the code.");
+      return;
+    }
+    setOtpStatus("loading");
+    setOtpMessage("");
+    try {
+      const response = await fetch(`${apiBase}/auth/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to send verification code.");
+      setOtpStatus("sent");
+      setOtpMessage(data.message ?? "Verification code sent. Check your inbox.");
+    } catch (error) {
+      setOtpStatus("error");
+      setOtpMessage(error instanceof Error ? error.message : "Unable to send verification code.");
+    }
   }
 
   return (
@@ -165,6 +193,20 @@ export function AuthForm({ mode }: { mode: "login" | "register" | "forgot-passwo
         {isLogin ? "Username or email" : "Email"}
         <input required type={isLogin ? "text" : "email"} name="email" autoComplete={isLogin ? "username" : "email"} className="rounded-md border border-slate-200 px-3 py-3 outline-none focus:border-brand-green" />
       </label>
+      {isRegister && (
+        <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Email verification code
+              <input required name="otp" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code" className="rounded-md border border-slate-200 bg-white px-3 py-3 outline-none focus:border-brand-green" placeholder="6-digit code" />
+            </label>
+            <button type="button" onClick={sendRegistrationOtp} disabled={otpStatus === "loading"} className="inline-flex min-h-11 items-center justify-center rounded-md border border-brand-green bg-white px-4 py-3 text-sm font-semibold text-brand-green transition hover:bg-brand-mint disabled:cursor-not-allowed disabled:opacity-60">
+              {otpStatus === "loading" ? "Sending..." : otpStatus === "sent" ? "Resend Code" : "Send Code"}
+            </button>
+          </div>
+          {otpStatus !== "idle" && <p className={`text-sm ${otpStatus === "error" ? "text-red-700" : "text-brand-green"}`}>{otpMessage}</p>}
+        </div>
+      )}
       {!isRecovery && (
         <label className="grid gap-2 text-sm font-medium text-slate-700">
           Password

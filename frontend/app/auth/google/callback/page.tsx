@@ -16,7 +16,7 @@ export default function GoogleAuthCallbackPage() {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const params = new URLSearchParams(window.location.search || window.location.hash.replace(/^#/, ""));
     const accessToken = params.get("accessToken");
     const refreshToken = params.get("refreshToken");
     const user = params.get("user");
