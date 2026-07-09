@@ -110,6 +110,7 @@ const videoLinkSchema = z.object({
     fileUrl: z.string().url(),
     fileName: z.string().optional(),
     mimeType: z.string().optional(),
+    resourceType: z.enum(["raw", "video"]).optional(),
     answer: z.string().optional()
   })
 });
@@ -896,40 +897,53 @@ lmsRouter.post("/assignments", requireRole("Teacher", "Admin", "Super Admin"), a
   res.status(201).json(assignment);
 }));
 
-lmsRouter.post("/assignment-video-signature", requireRole("Student"), asyncRoute(async (req, res) => {
-  const mode = req.body.mode === "course" ? "course" : "assignment";
-  const targetId = String(req.body.targetId ?? "");
+async function createAssignmentUploadSignature(userId: string, body: any) {
+  const mode = body.mode === "course" ? "course" : "assignment";
+  const targetId = String(body.targetId ?? "");
+  const resourceType = body.resourceType === "video" ? "video" : "raw";
   let courseId = targetId;
   if (mode === "assignment") {
     const assignment = await prisma.assignment.findUnique({ where: { id: targetId }, select: { courseId: true } });
-    if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+    if (!assignment) return { status: 404, payload: { error: "Assignment not found" } };
     courseId = assignment.courseId;
   } else {
     const course = await prisma.course.findUnique({ where: { id: targetId }, select: { id: true } });
-    if (!course) return res.status(404).json({ error: "Course not found" });
+    if (!course) return { status: 404, payload: { error: "Course not found" } };
   }
-  if (!(await requireActiveEnrollment(req.user!.id, courseId))) {
-    return res.status(403).json({ error: "Active enrollment is required before uploading assignment videos." });
+  if (!(await requireActiveEnrollment(userId, courseId))) {
+    return { status: 403, payload: { error: "Active enrollment is required before uploading assignments." } };
   }
 
   const config = getCloudinaryConfig();
-  if (!config) return res.status(503).json({ error: "Cloudinary video upload is not configured." });
+  if (!config) return { status: 503, payload: { error: "Cloudinary assignment upload is not configured." } };
   const timestamp = Math.round(Date.now() / 1000);
-  const folder = "atechskills/assignment-videos";
-  const signature = cloudinary.utils.api_sign_request({ timestamp, folder }, config.apiSecret);
-  res.json({ cloudName: config.cloudName, apiKey: config.apiKey, timestamp, folder, signature });
+  const folder = resourceType === "video" ? "atechskills/assignment-videos" : "atechskills/assignment-files";
+  const uploadParams = { timestamp, folder, use_filename: true, unique_filename: true };
+  const signature = cloudinary.utils.api_sign_request(uploadParams, config.apiSecret);
+  return { status: 200, payload: { cloudName: config.cloudName, apiKey: config.apiKey, timestamp, folder, resourceType, useFilename: true, uniqueFilename: true, signature } };
+}
+
+lmsRouter.post("/assignment-file-signature", requireRole("Student"), asyncRoute(async (req, res) => {
+  const result = await createAssignmentUploadSignature(req.user!.id, req.body);
+  res.status(result.status).json(result.payload);
 }));
 
-async function createVideoSubmission(userId: string, assignmentId: string, body: z.infer<typeof videoLinkSchema>["body"]) {
+lmsRouter.post("/assignment-video-signature", requireRole("Student"), asyncRoute(async (req, res) => {
+  const result = await createAssignmentUploadSignature(req.user!.id, { ...req.body, resourceType: "video" });
+  res.status(result.status).json(result.payload);
+}));
+
+async function createLinkedSubmission(userId: string, assignmentId: string, body: z.infer<typeof videoLinkSchema>["body"]) {
   const assignment = await prisma.assignment.findUnique({ where: { id: assignmentId } });
   if (!assignment) return null;
   if (!(await requireActiveEnrollment(userId, assignment.courseId))) return false;
+  const fileKind = body.resourceType === "video" || body.mimeType?.startsWith("video/") ? "video" : "file";
   return prisma.submission.create({
     data: {
       assignmentId,
       userId,
       fileUrl: body.fileUrl,
-      answer: body.answer ? `${body.answer}\n\nUploaded file: ${body.fileName ?? "video"}${body.mimeType ? ` (${body.mimeType})` : ""}` : `Uploaded file: ${body.fileName ?? "video"}${body.mimeType ? ` (${body.mimeType})` : ""}`
+      answer: body.answer ? `${body.answer}\n\nUploaded ${fileKind}: ${body.fileName ?? fileKind}${body.mimeType ? ` (${body.mimeType})` : ""}` : `Uploaded ${fileKind}: ${body.fileName ?? fileKind}${body.mimeType ? ` (${body.mimeType})` : ""}`
     },
     include: { assignment: { include: { course: true } }, user: true }
   });
@@ -962,7 +976,14 @@ lmsRouter.post("/assignments/:id/submit", requireRole("Student"), assignmentUplo
 }));
 
 lmsRouter.post("/assignments/:id/submit-video-link", requireRole("Student"), validate(videoLinkSchema), asyncRoute(async (req, res) => {
-  const result = await createVideoSubmission(req.user!.id, String(req.params.id), req.body);
+  const result = await createLinkedSubmission(req.user!.id, String(req.params.id), req.body);
+  if (result === null) return res.status(404).json({ error: "Assignment not found" });
+  if (result === false) return res.status(403).json({ error: "Active enrollment is required before submitting this assignment." });
+  res.status(201).json(result);
+}));
+
+lmsRouter.post("/assignments/:id/submit-file-link", requireRole("Student"), validate(videoLinkSchema), asyncRoute(async (req, res) => {
+  const result = await createLinkedSubmission(req.user!.id, String(req.params.id), req.body);
   if (result === null) return res.status(404).json({ error: "Assignment not found" });
   if (result === false) return res.status(403).json({ error: "Active enrollment is required before submitting this assignment." });
   res.status(201).json(result);
@@ -1021,7 +1042,26 @@ lmsRouter.post("/courses/:courseId/submit-video-link", requireRole("Student"), v
       maxScore: 100
     }
   });
-  const result = await createVideoSubmission(req.user!.id, assignment.id, req.body);
+  const result = await createLinkedSubmission(req.user!.id, assignment.id, req.body);
+  res.status(201).json(result);
+}));
+
+lmsRouter.post("/courses/:courseId/submit-file-link", requireRole("Student"), validate(videoLinkSchema), asyncRoute(async (req, res) => {
+  const course = await prisma.course.findUnique({ where: { id: String(req.params.courseId) } });
+  if (!course) return res.status(404).json({ error: "Course not found" });
+  if (!(await requireActiveEnrollment(req.user!.id, course.id))) return res.status(403).json({ error: "Active enrollment is required before submitting work for this course." });
+  const assignment = await prisma.assignment.findFirst({
+    where: { courseId: course.id, title: "General Course Submission" },
+    orderBy: { id: "asc" }
+  }) ?? await prisma.assignment.create({
+    data: {
+      courseId: course.id,
+      title: "General Course Submission",
+      description: "Student-uploaded work for this course.",
+      maxScore: 100
+    }
+  });
+  const result = await createLinkedSubmission(req.user!.id, assignment.id, req.body);
   res.status(201).json(result);
 }));
 

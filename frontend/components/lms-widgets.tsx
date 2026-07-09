@@ -331,42 +331,42 @@ function StudentAssignmentsPanel({ assignments, activeEnrollments, reload }: { a
         setMessage("Please login again before uploading assignments.");
         return;
       }
-      let response: Response;
-      if (file.type.startsWith("video/")) {
-        const signatureResponse = await authedFetch(`${apiBase}/lms/assignment-video-signature`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, targetId })
-        });
-        const signatureData = await signatureResponse.json();
-        if (!signatureResponse.ok) throw new Error(signatureData.error ?? "Unable to prepare video upload");
+      const resourceType = file.type.startsWith("video/") ? "video" : "raw";
+      const signatureResponse = await authedFetch(`${apiBase}/lms/assignment-file-signature`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, targetId, resourceType })
+      });
+      const signatureData = await signatureResponse.json();
+      if (!signatureResponse.ok) throw new Error(signatureData.error ?? "Unable to prepare assignment upload");
 
-        const uploadValues = new FormData();
-        uploadValues.set("file", file);
-        uploadValues.set("api_key", signatureData.apiKey);
-        uploadValues.set("timestamp", String(signatureData.timestamp));
-        uploadValues.set("folder", signatureData.folder);
-        uploadValues.set("signature", signatureData.signature);
-        const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${signatureData.cloudName}/video/upload`, {
-          method: "POST",
-          body: uploadValues
-        });
-        const cloudinaryData = await cloudinaryResponse.json();
-        if (!cloudinaryResponse.ok) throw new Error(cloudinaryData.error?.message ?? "Video upload failed");
-
-        const linkPath = mode === "course" ? `/lms/courses/${targetId}/submit-video-link` : `/lms/assignments/${targetId}/submit-video-link`;
-        response = await authedFetch(`${apiBase}${linkPath}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileUrl: cloudinaryData.secure_url, fileName: file.name, mimeType: file.type, answer: String(values.get("answer") ?? "") })
-        });
-      } else {
-        const path = mode === "course" ? `/lms/courses/${targetId}/submit-assignment` : `/lms/assignments/${targetId}/submit`;
-        response = await authedFetch(`${apiBase}${path}`, {
-          method: "POST",
-          body: values
-        });
+      const uploadValues = new FormData();
+      uploadValues.set("file", file);
+      uploadValues.set("api_key", signatureData.apiKey);
+      uploadValues.set("timestamp", String(signatureData.timestamp));
+      uploadValues.set("folder", signatureData.folder);
+      uploadValues.set("use_filename", "true");
+      uploadValues.set("unique_filename", "true");
+      uploadValues.set("signature", signatureData.signature);
+      const cloudinaryResponse = await fetch(`https://api.cloudinary.com/v1_1/${signatureData.cloudName}/${resourceType}/upload`, {
+        method: "POST",
+        body: uploadValues
+      });
+      const cloudinaryText = await cloudinaryResponse.text();
+      let cloudinaryData: any = {};
+      try {
+        cloudinaryData = cloudinaryText ? JSON.parse(cloudinaryText) : {};
+      } catch {
+        cloudinaryData = { error: { message: cloudinaryText || "Storage upload failed" } };
       }
+      if (!cloudinaryResponse.ok) throw new Error(cloudinaryData.error?.message ?? "Storage upload failed");
+
+      const linkPath = mode === "course" ? `/lms/courses/${targetId}/submit-file-link` : `/lms/assignments/${targetId}/submit-file-link`;
+      const response = await authedFetch(`${apiBase}${linkPath}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl: cloudinaryData.secure_url, fileName: file.name, mimeType: file.type, resourceType, answer: String(values.get("answer") ?? "") })
+      });
       const text = await response.text();
       let data: any = {};
       try {
@@ -972,14 +972,15 @@ function TeacherWorkspace({ activeTab }: { activeTab: string }) {
         setPreview({ id: submission.id, url, type });
         return;
       }
-      const link = document.createElement("a");
-      link.href = url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.download = type === "application/pdf" ? `assignment-${submission.id}.pdf` : `assignment-${submission.id}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = type === "application/pdf" ? `assignment-${submission.id}.pdf` : `assignment-${submission.id}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
       window.setTimeout(() => URL.revokeObjectURL(url), 30000);
     } catch (error) {
       setState((current) => ({ ...current, error: error instanceof Error ? error.message : "Unable to open assignment file" }));
