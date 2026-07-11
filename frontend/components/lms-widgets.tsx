@@ -3,44 +3,8 @@
 import { useEffect, useState } from "react";
 import { Award, Bell, BookOpenCheck, BriefcaseBusiness, CalendarDays, CheckCircle2, Clock, ExternalLink, FileText, MessageCircle, PlayCircle, RefreshCcw, Send, ShieldCheck, UserPlus, XCircle } from "lucide-react";
 import { Badge, ButtonLink, Card } from "@/components/ui";
+import { apiBase, authHeaders, authedFetch, refreshSession } from "@/lib/auth-client";
 import { categories as fallbackCategories, dashboardModules, portalCards, roleDashboards } from "@/lib/data";
-
-const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("atechskills_access_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function refreshSession() {
-  const refreshToken = localStorage.getItem("atechskills_refresh_token");
-  if (!refreshToken) return false;
-  const response = await fetch(`${apiBase}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken })
-  });
-  if (!response.ok) return false;
-  const data = await response.json();
-  if (data.accessToken) localStorage.setItem("atechskills_access_token", data.accessToken);
-  if (data.refreshToken) localStorage.setItem("atechskills_refresh_token", data.refreshToken);
-  if (data.user) localStorage.setItem("atechskills_user", JSON.stringify(data.user));
-  window.dispatchEvent(new Event("atechskills:auth-changed"));
-  return Boolean(data.accessToken);
-}
-
-async function authedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
-  Object.entries(authHeaders()).forEach(([key, value]) => headers.set(key, value));
-  const withAuth = { ...init, headers };
-  let response = await fetch(input, withAuth);
-  if ((response.status === 401 || response.status === 403) && await refreshSession()) {
-    const retryHeaders = new Headers(init.headers);
-    Object.entries(authHeaders()).forEach(([key, value]) => retryHeaders.set(key, value));
-    response = await fetch(input, { ...init, headers: retryHeaders });
-  }
-  return response;
-}
 
 type ApiState<T> = {
   data?: T;

@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Send, CheckCircle2, LogIn, ArrowRight } from "lucide-react";
-
-const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
+import { apiBase, authedFetch, ensureFreshSession, getAccessToken } from "@/lib/auth-client";
 
 function GoogleMark() {
   return (
@@ -288,7 +287,7 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    setHasToken(Boolean(localStorage.getItem("atechskills_access_token")));
+    setHasToken(Boolean(getAccessToken()));
     try {
       const raw = localStorage.getItem("atechskills_user");
       setUser(raw ? JSON.parse(raw) : null);
@@ -301,19 +300,18 @@ export function EnrollmentRequestForm({ slug, courseTitle }: { slug: string; cou
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const token = localStorage.getItem("atechskills_access_token");
-    if (!token) {
+    if (!(await ensureFreshSession())) {
       setStatus("error");
-      setMessage("Please login or create an account first. Enrollment will use the same email account.");
+      setMessage("Your login session expired. Please login again, then submit the enrollment request.");
+      setHasToken(false);
       return;
     }
     const values = new FormData(form);
     setStatus("loading");
     setMessage("");
     try {
-      const response = await fetch(`${apiBase}/lms/enrollments/${slug}`, {
+      const response = await authedFetch(`${apiBase}/lms/enrollments/${slug}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: values
       });
       const data = await response.json();

@@ -7,6 +7,7 @@ import { Bell, LogOut, Menu, Search, UserCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { navItems } from "@/lib/data";
 import { ButtonLink } from "@/components/ui";
+import { apiBase, authedFetch, getAccessToken } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 export function SiteHeader() {
@@ -14,7 +15,6 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<{ name?: string; email?: string; roles?: string[] } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:9000/api/v1";
 
   function readUser() {
     try {
@@ -53,7 +53,7 @@ export function SiteHeader() {
   }, []);
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("atechskills_access_token") : null;
+    const token = typeof window !== "undefined" ? getAccessToken() : null;
     if (!token || !user) {
       setUnreadCount(0);
       return;
@@ -61,7 +61,7 @@ export function SiteHeader() {
     let cancelled = false;
     async function loadNotifications() {
       try {
-        const response = await fetch(`${apiBase}/lms/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+        const response = await authedFetch(`${apiBase}/lms/notifications`);
         const data = await response.json();
         if (!cancelled && response.ok) setUnreadCount(Number(data.unreadCount ?? 0));
       } catch {
