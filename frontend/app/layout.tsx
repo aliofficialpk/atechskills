@@ -10,6 +10,9 @@ export const metadata: Metadata = {
     path: "/"
   }),
   applicationName: siteConfig.name,
+  other: {
+    "facebook-domain-verification": "x2080o0460us51hyaj36mimqiv73lj"
+  },
   appleWebApp: { capable: true, title: siteConfig.name },
   formatDetection: { telephone: false },
   icons: {
