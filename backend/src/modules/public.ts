@@ -3,6 +3,8 @@ import { z } from "zod";
 import { asyncRoute } from "../lib/async-route.js";
 import { prisma, withDbRetry } from "../lib/prisma.js";
 import { validate } from "../middleware/validate.js";
+import { env } from "../config.js";
+import crypto from "crypto";
 
 export const publicRouter = Router();
 
@@ -116,4 +118,31 @@ publicRouter.post("/forms/:type", validate(formSchema), asyncRoute(async (req, r
     }
   }), 3);
   res.status(201).json({ message: "Request captured", ticketId: ticket.id });
+}));
+
+// WhatsApp webhook verification endpoint
+publicRouter.get("/whatsapp/webhook", (req, res) => {
+  const mode = String(req.query["hub.mode"] ?? "");
+  const token = String(req.query["hub.verify_token"] ?? "");
+  const challenge = String(req.query["hub.challenge"] ?? "");
+  if (mode === "subscribe" && token === env.WHATSAPP_VERIFY_TOKEN) return res.status(200).send(challenge);
+  return res.sendStatus(403);
+});
+
+// WhatsApp webhook event receiver
+publicRouter.post("/whatsapp/webhook", asyncRoute(async (req, res) => {
+  const signature = (req.get("x-hub-signature-256") || req.get("x-hub-signature") || "") as string;
+  if (env.WHATSAPP_APP_SECRET && signature) {
+    const raw = (req as any).rawBody ? (req as any).rawBody : Buffer.from(JSON.stringify(req.body));
+    const expected = "sha256=" + crypto.createHmac("sha256", env.WHATSAPP_APP_SECRET).update(raw).digest("hex");
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return res.sendStatus(403);
+    } catch (e) {
+      return res.sendStatus(403);
+    }
+  }
+
+  // TODO: handle incoming notifications (messages, statuses) in req.body
+  console.log("WhatsApp webhook event:", JSON.stringify(req.body));
+  res.sendStatus(200);
 }));

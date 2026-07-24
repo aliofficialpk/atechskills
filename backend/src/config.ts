@@ -21,6 +21,9 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional()
+  ,
+  WHATSAPP_VERIFY_TOKEN: z.string().default("change-me-whatsapp-verify-token"),
+  WHATSAPP_APP_SECRET: z.string().optional()
 });
 
 export const env = schema.parse(process.env);

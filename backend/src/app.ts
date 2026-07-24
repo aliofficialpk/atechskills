@@ -12,7 +12,11 @@ import { uploadsRouter } from "./modules/uploads.js";
 export function createApp() {
   const app = express();
   applySecurity(app);
-  app.use(express.json({ limit: "1mb" }));
+  // capture raw body buffer on JSON requests for webhook signature verification
+  app.use(express.json({
+    limit: "1mb",
+    verify: (req: any, _res, buf) => { req.rawBody = buf; }
+  }));
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
 
