@@ -7,6 +7,42 @@ import { env } from "../config.js";
 
 export const whatsappRouter = Router();
 
+// ── Webhook (public, no auth) ────────────────────────────────────────────────
+
+// GET — Meta verification handshake
+whatsappRouter.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === env.WHATSAPP_VERIFY_TOKEN) {
+    console.log("WhatsApp webhook verified");
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+});
+
+// POST — incoming messages / status updates
+whatsappRouter.post("/webhook", (req, res) => {
+  const body = req.body as any;
+  if (body?.object === "whatsapp_business_account") {
+    const entries = body?.entry ?? [];
+    for (const entry of entries) {
+      const changes = entry?.changes ?? [];
+      for (const change of changes) {
+        const value = change?.value;
+        const messages = value?.messages ?? [];
+        for (const msg of messages) {
+          console.log("Incoming WhatsApp message:", JSON.stringify(msg));
+          // TODO: persist to DB / trigger notifications
+        }
+      }
+    }
+    return res.sendStatus(200);
+  }
+  return res.sendStatus(404);
+});
+
+// ── Authenticated admin routes ───────────────────────────────────────────────
 whatsappRouter.use(requireAuth, requireRole("Super Admin", "Admin"));
 
 const GRAPH_BASE = `https://graph.facebook.com/${env.WHATSAPP_API_VERSION}`;
