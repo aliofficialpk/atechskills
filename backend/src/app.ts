@@ -8,6 +8,7 @@ import { authRouter } from "./modules/auth.js";
 import { lmsRouter } from "./modules/lms.js";
 import { publicRouter } from "./modules/public.js";
 import { uploadsRouter } from "./modules/uploads.js";
+import { whatsappRouter } from "./modules/whatsapp.js";
 
 export function createApp() {
   const app = express();
@@ -33,6 +34,7 @@ export function createApp() {
     app.use(`${prefix}/admin-categories`, adminCategoriesAliasRouter);
     app.use(`${prefix}/admin-enrollments`, adminEnrollmentsAliasRouter);
     app.use(`${prefix}/uploads`, uploadsRouter);
+    app.use(`${prefix}/whatsapp`, whatsappRouter);
   }
 
   app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
