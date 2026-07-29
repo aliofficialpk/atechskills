@@ -556,3 +556,51 @@ model AuditLog {
   actor     User?    @relation("ActorAuditLogs", fields: [actorId], references: [id])
   createdAt DateTime @default(now())
 }
+
+model WhatsAppContact {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  tags      String[] @default([])
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  broadcasts WhatsAppBroadcastRecipient[]
+}
+
+model WhatsAppBroadcast {
+  id           String   @id @default(cuid())
+  title        String
+  message      String?
+  templateName String?
+  language     String   @default("en_US")
+  status       String   @default("DRAFT")
+  sentAt       DateTime?
+  createdAt    DateTime @default(now())
+  recipients   WhatsAppBroadcastRecipient[]
+}
+
+model WhatsAppBroadcastRecipient {
+  id          String            @id @default(cuid())
+  broadcastId String
+  contactId   String
+  status      String            @default("PENDING")
+  messageId   String?
+  error       String?
+  sentAt      DateTime?
+  broadcast   WhatsAppBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  contact     WhatsAppContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, contactId])
+}
+
+model WhatsAppAutoMessage {
+  id           String   @id @default(cuid())
+  trigger      String
+  templateName String?
+  message      String?
+  language     String   @default("en_US")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

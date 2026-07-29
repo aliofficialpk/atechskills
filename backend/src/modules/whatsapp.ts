@@ -148,3 +148,202 @@ whatsappRouter.post("/send-template", validate(templateSchema), asyncRoute(async
   });
   return res.json(result);
 }));
+
+// ── Contacts ─────────────────────────────────────────────────────────────────
+
+const contactSchema = z.object({
+  body: z.object({
+    name: z.string().min(1),
+    phone: z.string().min(7),
+    tags: z.array(z.string()).optional(),
+    notes: z.string().optional()
+  })
+});
+
+import { prisma } from "../lib/prisma.js";
+
+// GET /whatsapp/contacts
+whatsappRouter.get("/contacts", asyncRoute(async (req, res) => {
+  const search = String(req.query.search ?? "");
+  const tag = String(req.query.tag ?? "");
+  const contacts = await prisma.whatsAppContact.findMany({
+    where: {
+      ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { phone: { contains: search } }] } : {}),
+      ...(tag ? { tags: { has: tag } } : {})
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  return res.json(contacts);
+}));
+
+// POST /whatsapp/contacts
+whatsappRouter.post("/contacts", validate(contactSchema), asyncRoute(async (req, res) => {
+  const { name, phone, tags, notes } = req.body as any;
+  const contact = await prisma.whatsAppContact.upsert({
+    where: { phone },
+    update: { name, tags: tags ?? [], notes },
+    create: { name, phone, tags: tags ?? [], notes }
+  });
+  return res.json(contact);
+}));
+
+// POST /whatsapp/contacts/import — bulk import CSV rows
+whatsappRouter.post("/contacts/import", asyncRoute(async (req, res) => {
+  const rows = req.body as Array<{ name: string; phone: string; tags?: string[]; notes?: string }>;
+  if (!Array.isArray(rows)) return res.status(400).json({ error: "Expected array of contacts" });
+  let created = 0, updated = 0;
+  for (const row of rows) {
+    if (!row.phone || !row.name) continue;
+    const existing = await prisma.whatsAppContact.findUnique({ where: { phone: row.phone } });
+    await prisma.whatsAppContact.upsert({
+      where: { phone: row.phone },
+      update: { name: row.name, tags: row.tags ?? [], notes: row.notes },
+      create: { name: row.name, phone: row.phone, tags: row.tags ?? [], notes: row.notes }
+    });
+    existing ? updated++ : created++;
+  }
+  return res.json({ created, updated, total: rows.length });
+}));
+
+// DELETE /whatsapp/contacts/:id
+whatsappRouter.delete("/contacts/:id", asyncRoute(async (req, res) => {
+  await prisma.whatsAppContact.delete({ where: { id: req.params.id } });
+  return res.json({ success: true });
+}));
+
+// ── Broadcasts ────────────────────────────────────────────────────────────────
+
+const broadcastSchema = z.object({
+  body: z.object({
+    title: z.string().min(1),
+    message: z.string().optional(),
+    templateName: z.string().optional(),
+    language: z.string().default("en_US"),
+    contactIds: z.array(z.string()).min(1),
+    tags: z.array(z.string()).optional()
+  })
+});
+
+// GET /whatsapp/broadcasts
+whatsappRouter.get("/broadcasts", asyncRoute(async (_req, res) => {
+  const broadcasts = await prisma.whatsAppBroadcast.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { _count: { select: { recipients: true } } }
+  });
+  return res.json(broadcasts);
+}));
+
+// POST /whatsapp/broadcasts — create and immediately send
+whatsappRouter.post("/broadcasts", validate(broadcastSchema), asyncRoute(async (req, res) => {
+  const { title, message, templateName, language, contactIds, tags } = req.body as any;
+  const phoneId = env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!phoneId) return res.status(400).json({ error: "WHATSAPP_PHONE_NUMBER_ID not configured" });
+
+  // Resolve contacts — by IDs or by tags
+  let contacts: any[] = [];
+  if (tags && tags.length > 0) {
+    contacts = await prisma.whatsAppContact.findMany({ where: { tags: { hasSome: tags } } });
+  } else {
+    contacts = await prisma.whatsAppContact.findMany({ where: { id: { in: contactIds } } });
+  }
+  if (!contacts.length) return res.status(400).json({ error: "No contacts found" });
+
+  const broadcast = await prisma.whatsAppBroadcast.create({
+    data: {
+      title,
+      message,
+      templateName,
+      language,
+      status: "SENDING",
+      recipients: {
+        create: contacts.map((c: any) => ({ contactId: c.id, status: "PENDING" }))
+      }
+    }
+  });
+
+  // Send in background, don't await
+  (async () => {
+    let successCount = 0;
+    for (const contact of contacts) {
+      try {
+        let result: any;
+        if (templateName) {
+          result = await graphPost(`${phoneId}/messages`, {
+            messaging_product: "whatsapp",
+            to: contact.phone,
+            type: "template",
+            template: { name: templateName, language: { code: language } }
+          });
+        } else if (message) {
+          result = await graphPost(`${phoneId}/messages`, {
+            messaging_product: "whatsapp",
+            to: contact.phone,
+            type: "text",
+            text: { body: message }
+          });
+        }
+        await prisma.whatsAppBroadcastRecipient.update({
+          where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
+          data: { status: "SENT", messageId: result?.messages?.[0]?.id, sentAt: new Date() }
+        });
+        successCount++;
+      } catch (err: any) {
+        await prisma.whatsAppBroadcastRecipient.update({
+          where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
+          data: { status: "FAILED", error: err?.message ?? "Send failed" }
+        });
+      }
+    }
+    await prisma.whatsAppBroadcast.update({
+      where: { id: broadcast.id },
+      data: { status: successCount === contacts.length ? "SENT" : "PARTIAL", sentAt: new Date() }
+    });
+  })();
+
+  return res.json({ broadcastId: broadcast.id, totalRecipients: contacts.length, status: "SENDING" });
+}));
+
+// GET /whatsapp/broadcasts/:id — get broadcast with recipient details
+whatsappRouter.get("/broadcasts/:id", asyncRoute(async (req, res) => {
+  const broadcast = await prisma.whatsAppBroadcast.findUnique({
+    where: { id: req.params.id },
+    include: { recipients: { include: { contact: true } } }
+  });
+  if (!broadcast) return res.status(404).json({ error: "Broadcast not found" });
+  return res.json(broadcast);
+}));
+
+// ── Auto Messages ─────────────────────────────────────────────────────────────
+
+whatsappRouter.get("/auto-messages", asyncRoute(async (_req, res) => {
+  const items = await prisma.whatsAppAutoMessage.findMany({ orderBy: { createdAt: "desc" } });
+  return res.json(items);
+}));
+
+const autoMsgSchema = z.object({
+  body: z.object({
+    trigger: z.enum(["fee_paid", "enrollment_approved", "enrollment_rejected", "class_reminder", "custom"]),
+    templateName: z.string().optional(),
+    message: z.string().optional(),
+    language: z.string().default("en_US"),
+    isActive: z.boolean().default(true)
+  })
+});
+
+whatsappRouter.post("/auto-messages", validate(autoMsgSchema), asyncRoute(async (req, res) => {
+  const item = await prisma.whatsAppAutoMessage.create({ data: req.body as any });
+  return res.json(item);
+}));
+
+whatsappRouter.patch("/auto-messages/:id", asyncRoute(async (req, res) => {
+  const item = await prisma.whatsAppAutoMessage.update({
+    where: { id: req.params.id },
+    data: req.body as any
+  });
+  return res.json(item);
+}));
+
+whatsappRouter.delete("/auto-messages/:id", asyncRoute(async (req, res) => {
+  await prisma.whatsAppAutoMessage.delete({ where: { id: req.params.id } });
+  return res.json({ success: true });
+}));
