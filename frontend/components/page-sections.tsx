@@ -262,12 +262,86 @@ function StudentServicesContent() {
 }
 
 function PolicyContent({ kind }: { kind: string }) {
-  const copy = kind === "blog"
-    ? ["Technical articles", "Course announcements", "Career guidance", "Event recaps"]
-    : kind === "privacy-policy"
-      ? ["Learner account data", "Enrollment and payment context", "Support ticket history", "Analytics and communication preferences"]
-      : ["Enrollment rules", "Course access", "Certificate requirements", "Acceptable platform use"];
+  if (kind === "privacy-policy") return <PrivacyPolicyContent />;
+  if (kind === "terms-and-conditions") return <TermsContent />;
+  const copy = kind === "blog" ? ["Technical articles", "Course announcements", "Career guidance", "Event recaps"] : ["Enrollment rules", "Course access", "Certificate requirements", "Acceptable platform use"];
   return <div className="grid gap-5 md:grid-cols-2">{copy.map((item) => <Card key={item} className="p-6"><h2 className="text-xl font-bold">{item}</h2><p className="mt-2 text-sm leading-6 text-slate-600">This page is structured for CMS-managed legal and editorial content with clear routing, SEO metadata, and admin ownership.</p></Card>)}</div>;
+}
+
+function PrivacyPolicyContent() {
+  return (
+    <div className="mx-auto max-w-3xl grid gap-8 text-slate-700">
+      <p className="text-sm text-slate-500">Last updated: July 2026</p>
+      {[
+        {
+          title: "1. Who We Are",
+          body: "AtechSkills is a technology education platform providing cybersecurity, DevSecOps, AI, and cloud training. This Privacy Policy explains how we collect, use, and protect information when you use our website at atechskills.com, enroll in our courses, attend events, or contact us."
+        },
+        {
+          title: "2. Information We Collect",
+          body: "We collect information you provide directly: name, email address, phone number, payment proof uploads, support messages, and event registrations. We also collect usage data such as pages visited, login timestamps, and course progress."
+        },
+        {
+          title: "3. How We Use Your Information",
+          body: "We use your information to process course enrollments and verify payments, send class schedules and reminders via email and WhatsApp, issue certificates, respond to support queries, and improve our platform. We do not sell your personal data to third parties."
+        },
+        {
+          title: "4. WhatsApp Messaging",
+          body: "With your consent, we may send transactional messages via WhatsApp — including enrollment confirmations, fee payment receipts, class reminders, and course updates. These messages are sent through Meta's WhatsApp Cloud API. You can opt out at any time by contacting us at info@atechskills.com."
+        },
+        {
+          title: "5. Data Storage and Security",
+          body: "Your data is stored securely on cloud infrastructure (Neon PostgreSQL, Cloudinary). We use industry-standard encryption for data in transit (HTTPS/TLS) and at rest. Access is restricted to authorized AtechSkills staff only."
+        },
+        {
+          title: "6. Third-Party Services",
+          body: "We use the following third-party services: Meta WhatsApp Cloud API (messaging), Cloudinary (file and media storage), Google OAuth (login), Vercel (hosting), and Neon (database). Each service has its own privacy policy governing their data handling."
+        },
+        {
+          title: "7. Your Rights",
+          body: "You may request access to, correction of, or deletion of your personal data at any time by emailing info@atechskills.com. We will respond within 30 days."
+        },
+        {
+          title: "8. Cookies",
+          body: "We use essential cookies for authentication (JWT tokens stored in localStorage). We do not use advertising or tracking cookies."
+        },
+        {
+          title: "9. Changes to This Policy",
+          body: "We may update this Privacy Policy from time to time. The latest version will always be available at atechskills.com/privacy-policy. Continued use of the platform after changes constitutes acceptance."
+        },
+        {
+          title: "10. Contact",
+          body: "For privacy questions, email info@atechskills.com or visit atechskills.com/contact."
+        }
+      ].map((section) => (
+        <div key={section.title}>
+          <h2 className="text-xl font-bold text-slate-900">{section.title}</h2>
+          <p className="mt-3 leading-7">{section.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TermsContent() {
+  return (
+    <div className="mx-auto max-w-3xl grid gap-8 text-slate-700">
+      <p className="text-sm text-slate-500">Last updated: July 2026</p>
+      {[
+        { title: "1. Enrollment", body: "Course enrollment requires payment verification by AtechSkills staff. Access is granted only after payment is confirmed. AtechSkills reserves the right to reject enrollments." },
+        { title: "2. Course Access", body: "Enrolled students may access course materials, recordings, and live sessions for the duration of their enrollment. Access may be revoked for violation of these terms." },
+        { title: "3. Certificates", body: "Certificates are issued upon successful completion of course requirements including attendance and assignments as defined by the instructor." },
+        { title: "4. Acceptable Use", body: "You may not share account credentials, redistribute course materials, or use the platform for any unlawful purpose." },
+        { title: "5. Payments", body: "All payments are processed offline via bank transfer. Refunds are handled on a case-by-case basis. Contact info@atechskills.com for refund requests." },
+        { title: "6. Contact", body: "For terms questions, email info@atechskills.com." }
+      ].map((section) => (
+        <div key={section.title}>
+          <h2 className="text-xl font-bold text-slate-900">{section.title}</h2>
+          <p className="mt-3 leading-7">{section.body}</p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ContactPage() {
