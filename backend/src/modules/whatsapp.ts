@@ -11,9 +11,9 @@ export const whatsappRouter = Router();
 
 // GET — Meta verification handshake
 whatsappRouter.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+  const mode = String(req.query["hub.mode"] ?? "");
+  const token = String(req.query["hub.verify_token"] ?? "");
+  const challenge = String(req.query["hub.challenge"] ?? "");
   if (mode === "subscribe" && token === env.WHATSAPP_VERIFY_TOKEN) {
     console.log("WhatsApp webhook verified");
     return res.status(200).send(challenge);
@@ -197,8 +197,8 @@ whatsappRouter.post("/contacts/import", asyncRoute(async (req, res) => {
     const existing = await prisma.whatsAppContact.findUnique({ where: { phone: row.phone } });
     await prisma.whatsAppContact.upsert({
       where: { phone: row.phone },
-      update: { name: row.name, tags: row.tags ?? [], notes: row.notes },
-      create: { name: row.name, phone: row.phone, tags: row.tags ?? [], notes: row.notes }
+      update: { name: row.name, tags: row.tags ?? [], notes: row.notes ?? null },
+      create: { name: row.name, phone: row.phone, tags: row.tags ?? [], notes: row.notes ?? null }
     });
     existing ? updated++ : created++;
   }
@@ -331,14 +331,30 @@ const autoMsgSchema = z.object({
 });
 
 whatsappRouter.post("/auto-messages", validate(autoMsgSchema), asyncRoute(async (req, res) => {
-  const item = await prisma.whatsAppAutoMessage.create({ data: req.body as any });
+  const { trigger, templateName, message, language, isActive } = req.body as any;
+  const item = await prisma.whatsAppAutoMessage.create({
+    data: {
+      trigger: String(trigger),
+      templateName: templateName ? String(templateName) : null,
+      message: message ? String(message) : null,
+      language: String(language ?? "en_US"),
+      isActive: Boolean(isActive ?? true)
+    }
+  });
   return res.json(item);
 }));
 
 whatsappRouter.patch("/auto-messages/:id", asyncRoute(async (req, res) => {
+  const { trigger, templateName, message, language, isActive } = req.body as any;
   const item = await prisma.whatsAppAutoMessage.update({
-    where: { id: req.params.id },
-    data: req.body as any
+    where: { id: String(req.params.id) },
+    data: {
+      ...(trigger !== undefined && { trigger: String(trigger) }),
+      ...(templateName !== undefined && { templateName: templateName ? String(templateName) : null }),
+      ...(message !== undefined && { message: message ? String(message) : null }),
+      ...(language !== undefined && { language: String(language) }),
+      ...(isActive !== undefined && { isActive: Boolean(isActive) })
+    }
   });
   return res.json(item);
 }));
