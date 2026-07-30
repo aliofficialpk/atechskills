@@ -207,7 +207,7 @@ whatsappRouter.post("/contacts/import", asyncRoute(async (req, res) => {
 
 // DELETE /whatsapp/contacts/:id
 whatsappRouter.delete("/contacts/:id", asyncRoute(async (req, res) => {
-  await prisma.whatsAppContact.delete({ where: { id: req.params.id } });
+  await prisma.whatsAppContact.delete({ where: { id: String(req.params.id) } });
   return res.json({ success: true });
 }));
 
@@ -306,7 +306,7 @@ whatsappRouter.post("/broadcasts", validate(broadcastSchema), asyncRoute(async (
 // GET /whatsapp/broadcasts/:id — get broadcast with recipient details
 whatsappRouter.get("/broadcasts/:id", asyncRoute(async (req, res) => {
   const broadcast = await prisma.whatsAppBroadcast.findUnique({
-    where: { id: req.params.id },
+    where: { id: String(req.params.id) },
     include: { recipients: { include: { contact: true } } }
   });
   if (!broadcast) return res.status(404).json({ error: "Broadcast not found" });
@@ -360,6 +360,6 @@ whatsappRouter.patch("/auto-messages/:id", asyncRoute(async (req, res) => {
 }));
 
 whatsappRouter.delete("/auto-messages/:id", asyncRoute(async (req, res) => {
-  await prisma.whatsAppAutoMessage.delete({ where: { id: req.params.id } });
+  await prisma.whatsAppAutoMessage.delete({ where: { id: String(req.params.id) } });
   return res.json({ success: true });
 }));
