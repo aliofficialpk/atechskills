@@ -239,7 +239,7 @@ whatsappRouter.post("/broadcasts", validate(broadcastSchema), asyncRoute(async (
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID;
   if (!phoneId) return res.status(400).json({ error: "WHATSAPP_PHONE_NUMBER_ID not configured" });
 
-  // Resolve contacts — by IDs or by tags
+  // Resolve contacts
   let contacts: any[] = [];
   if (tags && tags.length > 0) {
     contacts = await prisma.whatsAppContact.findMany({ where: { tags: { hasSome: tags } } });
@@ -250,57 +250,47 @@ whatsappRouter.post("/broadcasts", validate(broadcastSchema), asyncRoute(async (
 
   const broadcast = await prisma.whatsAppBroadcast.create({
     data: {
-      title,
-      message,
-      templateName,
-      language,
-      status: "SENDING",
-      recipients: {
-        create: contacts.map((c: any) => ({ contactId: c.id, status: "PENDING" }))
-      }
+      title, message, templateName, language, status: "SENDING",
+      recipients: { create: contacts.map((c: any) => ({ contactId: c.id, status: "PENDING" })) }
     }
   });
 
-  // Send in background, don't await
-  (async () => {
-    let successCount = 0;
-    for (const contact of contacts) {
-      try {
-        let result: any;
-        if (templateName) {
-          result = await graphPost(`${phoneId}/messages`, {
-            messaging_product: "whatsapp",
-            to: contact.phone,
-            type: "template",
-            template: { name: templateName, language: { code: language } }
-          });
-        } else if (message) {
-          result = await graphPost(`${phoneId}/messages`, {
-            messaging_product: "whatsapp",
-            to: contact.phone,
-            type: "text",
-            text: { body: message }
-          });
-        }
-        await prisma.whatsAppBroadcastRecipient.update({
-          where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
-          data: { status: "SENT", messageId: result?.messages?.[0]?.id, sentAt: new Date() }
+  // Send synchronously within the request — Vercel serverless needs this
+  let successCount = 0;
+  for (const contact of contacts) {
+    try {
+      let result: any;
+      if (templateName) {
+        result = await graphPost(`${phoneId}/messages`, {
+          messaging_product: "whatsapp", to: contact.phone, type: "template",
+          template: { name: templateName, language: { code: language ?? "en_US" } }
         });
-        successCount++;
-      } catch (err: any) {
-        await prisma.whatsAppBroadcastRecipient.update({
-          where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
-          data: { status: "FAILED", error: err?.message ?? "Send failed" }
+      } else if (message) {
+        result = await graphPost(`${phoneId}/messages`, {
+          messaging_product: "whatsapp", to: contact.phone, type: "text",
+          text: { body: message }
         });
       }
+      await prisma.whatsAppBroadcastRecipient.update({
+        where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
+        data: { status: "SENT", messageId: result?.messages?.[0]?.id ?? null, sentAt: new Date() }
+      });
+      successCount++;
+    } catch (err: any) {
+      await prisma.whatsAppBroadcastRecipient.update({
+        where: { broadcastId_contactId: { broadcastId: broadcast.id, contactId: contact.id } },
+        data: { status: "FAILED", error: String(err?.message ?? "Send failed") }
+      });
     }
-    await prisma.whatsAppBroadcast.update({
-      where: { id: broadcast.id },
-      data: { status: successCount === contacts.length ? "SENT" : "PARTIAL", sentAt: new Date() }
-    });
-  })();
+  }
 
-  return res.json({ broadcastId: broadcast.id, totalRecipients: contacts.length, status: "SENDING" });
+  const finalStatus = successCount === contacts.length ? "SENT" : successCount > 0 ? "PARTIAL" : "FAILED";
+  await prisma.whatsAppBroadcast.update({
+    where: { id: broadcast.id },
+    data: { status: finalStatus, sentAt: new Date() }
+  });
+
+  return res.json({ broadcastId: broadcast.id, totalRecipients: contacts.length, sent: successCount, status: finalStatus });
 }));
 
 // GET /whatsapp/broadcasts/:id — get broadcast with recipient details
